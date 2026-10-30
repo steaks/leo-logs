@@ -78,7 +78,10 @@ export interface LogDb {
   path: string;
   source: LogSource;
   hasAccount(): boolean;
-  createAccount(username: string, password: string): void;
+  createAccount(username: string, password: string): string;
+  webhookToken(): string | null;
+  setupReady(): boolean;
+  finishSetup(): void;
   checkAccount(username: string, password: string): boolean;
   openSession(): string;
   validSession(token: string): boolean;
@@ -243,17 +246,23 @@ export const openLogs = (env: NodeJS.ProcessEnv): LogDb => {
       id INTEGER PRIMARY KEY CHECK (id = 1),
       username TEXT NOT NULL,
       password_hash TEXT NOT NULL,
-      password_salt TEXT NOT NULL
+      password_salt TEXT NOT NULL,
+      webhook_token TEXT NOT NULL DEFAULT '',
+      ready INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS sessions (
       token_hash TEXT PRIMARY KEY,
       expires_at INTEGER NOT NULL
     );
   `);
+  const accountColumns = new Set((db.prepare('PRAGMA table_info(account)').all() as { name: string }[]).map((column) => column.name));
+  if (!accountColumns.has('webhook_token')) db.exec(`ALTER TABLE account ADD COLUMN webhook_token TEXT NOT NULL DEFAULT ''`);
+  if (!accountColumns.has('ready')) db.exec('ALTER TABLE account ADD COLUMN ready INTEGER NOT NULL DEFAULT 0');
   const passwordHash = (password: string, salt: Buffer): string => scryptSync(password, salt, 32).toString('hex');
   const sessionHash = (token: string): string => createHash('sha256').update(token).digest('hex');
-  const readAccount = db.prepare('SELECT username, password_hash, password_salt FROM account WHERE id = 1');
-  const writeAccount = db.prepare('INSERT INTO account (id, username, password_hash, password_salt) VALUES (1, ?, ?, ?)');
+  const readAccount = db.prepare('SELECT username, password_hash, password_salt, webhook_token, ready FROM account WHERE id = 1');
+  const writeAccount = db.prepare('INSERT INTO account (id, username, password_hash, password_salt, webhook_token, ready) VALUES (1, ?, ?, ?, ?, 0)');
+  const markReady = db.prepare('UPDATE account SET ready = 1 WHERE id = 1');
   const writeSession = db.prepare('INSERT INTO sessions (token_hash, expires_at) VALUES (?, ?)');
   const readSession = db.prepare('SELECT expires_at FROM sessions WHERE token_hash = ?');
   const dropSession = db.prepare('DELETE FROM sessions WHERE token_hash = ?');
@@ -320,7 +329,21 @@ export const openLogs = (env: NodeJS.ProcessEnv): LogDb => {
     createAccount(username, password) {
       if (readAccount.get() != null) throw new Error('A login already exists');
       const salt = randomBytes(16);
-      writeAccount.run(username, passwordHash(password, salt), salt.toString('hex'));
+      const webhookToken = randomBytes(32).toString('hex');
+      writeAccount.run(username, passwordHash(password, salt), salt.toString('hex'), webhookToken);
+      return webhookToken;
+    },
+    webhookToken() {
+      const row = readAccount.get() as { webhook_token?: string } | undefined;
+      const token = row?.webhook_token?.trim() ?? '';
+      return token || null;
+    },
+    setupReady() {
+      const row = readAccount.get() as { ready?: number } | undefined;
+      return row?.ready === 1;
+    },
+    finishSetup() {
+      markReady.run();
     },
     checkAccount(username, password) {
       const row = readAccount.get() as { username: string; password_hash: string; password_salt: string } | undefined;

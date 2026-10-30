@@ -9,9 +9,8 @@ Usage:
 
 The page lists pipelines and agents from the SQLite log. OpenRouter posts traces to /traces.
 The file is .leo-logs/logs.db. LEO_LOGS_DB overrides that path.
-LEO_LOGS_TOKEN, when set, requires Authorization: Bearer on POST /traces.
-With no saved login, the first page visit creates the username and password.
-LEO_LOGS_USER and LEO_LOGS_PASSWORD, when both set, require that login instead.
+With no saved login, the first page visit creates the username and password, then an access token for OpenRouter. Both are saved in the SQLite file.
+LEO_LOGS_TOKEN, when set, is used as that token instead.
 
 --port   Default: 8787. The server listens on all interfaces.
 `.trim();

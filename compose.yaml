@@ -4,9 +4,7 @@ services:
     restart: unless-stopped
     environment:
       LEO_LOGS_DB: /data/logs.db
-      LEO_LOGS_TOKEN: ${LEO_LOGS_TOKEN:?Set LEO_LOGS_TOKEN in .env}
-      LEO_LOGS_USER: ${LEO_LOGS_USER:-}
-      LEO_LOGS_PASSWORD: ${LEO_LOGS_PASSWORD:-}
+      LEO_LOGS_TOKEN: ${LEO_LOGS_TOKEN:-}
     volumes:
       - leo-logs:/data
 

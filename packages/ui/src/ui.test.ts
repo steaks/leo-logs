@@ -204,6 +204,8 @@ describe('log ui', () => {
       });
       assert.equal(setup.status, 200);
       const cookie = (setup.headers.get('set-cookie') ?? '').split(';')[0];
+      const ready = await fetch(`${ui.url}/ready`, { method: 'POST', headers: { cookie } });
+      assert.equal(ready.status, 200);
       const empty = await fetch(`${ui.url}/api/catalog`, { headers: { cookie } });
       const catalog = await empty.json() as { configured: boolean; message: string | null; table: string; pipelines: unknown[] };
       assert.equal(catalog.configured, true);
@@ -252,7 +254,7 @@ describe('log ui', () => {
 
   it('shows setup on a new log file, then requires that login', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'leo-logs-'));
-    const ui = await startLogUi({ port: 0, env: { LEO_LOGS_DB: join(dir, 'logs.db'), LEO_LOGS_TOKEN: 'hook' } });
+    const ui = await startLogUi({ port: 0, env: { LEO_LOGS_DB: join(dir, 'logs.db') } });
     try {
       const first = await fetch(`${ui.url}/`);
       assert.equal(first.status, 200);
@@ -291,12 +293,20 @@ describe('log ui', () => {
       assert.equal(login.status, 200);
       const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
       const page = await fetch(`${ui.url}/`, { headers: { cookie } });
-      assert.match(await page.text(), /Pipelines/);
+      const html = await page.text();
+      assert.match(html, /Connect OpenRouter/);
+      assert.match(html, /\/traces/);
+      const token = /data-token="([^"]+)"/.exec(html)?.[1] ?? '';
+      assert.equal(token.length, 64);
       const posted = await fetch(`${ui.url}/traces`, {
         method: 'POST',
-        headers: { authorization: 'Bearer hook', 'x-test-connection': 'true' },
+        headers: { authorization: `Bearer ${token}`, 'x-test-connection': 'true' },
       });
       assert.equal(posted.status, 200);
+      const ready = await fetch(`${ui.url}/ready`, { method: 'POST', headers: { cookie } });
+      assert.equal(ready.status, 200);
+      const logs = await fetch(`${ui.url}/`, { headers: { cookie } });
+      assert.match(await logs.text(), /Pipelines/);
     } finally {
       await ui.close();
       rmSync(dir, { recursive: true, force: true });

@@ -4,7 +4,7 @@ import { parseTraceId } from '@leo-logs/trace';
 import { spansFromOtlp } from './otlp';
 import { openRouterProviders } from './openrouter';
 import { traceQuery, type TraceQuery } from './query';
-import { accessPage } from './access-page';
+import { accessPage, gettingStartedPage } from './access-page';
 import { openLogs, type LogDb, type LogRow, type LogSource } from './sqlite';
 import { logPage } from './ui-page';
 
@@ -101,12 +101,21 @@ const sameSecret = (presented: string, expected: string): boolean => {
   return left.length === right.length && timingSafeEqual(left, right);
 };
 
-/** `LEO_LOGS_TOKEN`, when set, is the bearer token OpenRouter sends on POST /traces. */
-const authorized = (request: IncomingMessage, token: string): boolean => {
-  if (!token) return true;
+/** Accepts `Authorization: Bearer` when it matches the env token or the token created during setup. */
+const authorized = (request: IncomingMessage, tokens: string[]): boolean => {
+  const expected = tokens.filter((token) => token.length > 0);
+  if (expected.length === 0) return false;
   const header = request.headers.authorization;
   const presented = typeof header === 'string' && header.startsWith('Bearer ') ? header.slice('Bearer '.length) : '';
-  return sameSecret(presented, token);
+  return expected.some((token) => sameSecret(presented, token));
+};
+
+const publicOrigin = (request: IncomingMessage): string => {
+  const forwarded = request.headers['x-forwarded-proto'];
+  const proto = forwarded === 'https' || forwarded === 'http' ? forwarded : 'http';
+  const hostHeader = request.headers['x-forwarded-host'] ?? request.headers.host ?? '127.0.0.1';
+  const host = Array.isArray(hostHeader) ? hostHeader[0] : hostHeader;
+  return `${proto}://${host}`;
 };
 
 /** `LEO_LOGS_USER` and `LEO_LOGS_PASSWORD` lock the page. POST /traces stays on the bearer token. */
@@ -180,7 +189,24 @@ const admit = async (logs: LogDb, request: IncomingMessage, response: ServerResp
   if ((url.pathname === '/setup' || url.pathname === '/login') && method === 'POST') {
     return saveLogin(logs, request, response, url.pathname === '/setup', account);
   }
-  if (logs.validSession(cookieValue(request, 'leo_logs'))) return true;
+  if (logs.validSession(cookieValue(request, 'leo_logs'))) {
+    if (logs.setupReady()) return true;
+    if (url.pathname === '/ready' && method === 'POST') {
+      logs.finishSetup();
+      send(response, 200, { ok: true }, 'application/json; charset=utf-8');
+      return false;
+    }
+    if (PAGE_PATHS.has(url.pathname) && method === 'GET') {
+      const token = logs.webhookToken() ?? '';
+      send(response, 200, gettingStartedPage(`${publicOrigin(request)}/traces`, token), 'text/html; charset=utf-8');
+      return false;
+    }
+    if (url.pathname === '/api/catalog' || url.pathname === '/api/rows' || url.pathname === '/api/providers') {
+      send(response, 401, { error: 'Finish setup first' }, 'application/json; charset=utf-8');
+      return false;
+    }
+    return true;
+  }
   if (PAGE_PATHS.has(url.pathname) && method === 'GET') {
     send(response, 200, accessPage(account ? 'login' : 'setup'), 'text/html; charset=utf-8');
     return false;
@@ -244,7 +270,7 @@ const handle = async (
       send(response, 404, { error: 'Not found' }, 'application/json; charset=utf-8');
       return;
     }
-    if (!authorized(request, token)) {
+    if (!authorized(request, [token, logs.webhookToken() ?? ''])) {
       send(response, 401, { error: 'Unauthorized' }, 'application/json; charset=utf-8');
       return;
     }
