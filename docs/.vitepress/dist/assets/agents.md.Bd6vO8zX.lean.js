@@ -1,1 +1,0 @@
-import{_ as i,o as e,c as a,a2 as n}from"./chunks/framework.CdvW4CUT.js";const c=JSON.parse('{"title":"Agents","description":"","frontmatter":{},"headers":[],"relativePath":"agents.md","filePath":"agents.md"}'),t={name:"agents.md"};function l(p,s,h,k,o,d){return e(),a("div",null,[...s[0]||(s[0]=[n("",14)])])}const g=i(t,[["render",l]]);export{c as __pageData,g as default};
