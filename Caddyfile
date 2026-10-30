@@ -1,3 +1,7 @@
-{$LEO_LOGS_DOMAIN} {
+# Replace :80 with the public hostname to serve HTTPS.
+# logs.example.com {
+#	reverse_proxy leo-logs:3000
+# }
+:80 {
 	reverse_proxy leo-logs:3000
 }

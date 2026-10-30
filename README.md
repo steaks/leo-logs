@@ -63,10 +63,10 @@ The page lists pipelines and the agents recorded under them, plus agents called 
 
 The page reads the last 30 days, up to 200 rows. Older rows are deleted. A pipeline or agent appears after a trace for it has been posted.
 
-On the VM, open ports 80 and 443 and point a DNS name at it. Copy `.env.example` to `.env` and set `LEO_LOGS_DOMAIN` to that name. Then:
+On the VM, open ports 80 and 443 and point a DNS name at it. In the Caddyfile, replace `:80` with that hostname. Then:
 
 ```bash
 docker compose up -d
 ```
 
-Caddy requests a certificate for `LEO_LOGS_DOMAIN` and serves the page there. The first visit asks you to create a username and password, then shows the access token and where to paste it in OpenRouter. The SQLite file stays on the `leo-logs` volume.
+Caddy requests a certificate for that hostname and serves the page there. The first visit asks you to create a username and password, then shows the access token and where to paste it in OpenRouter. The SQLite file stays on the `leo-logs` volume.

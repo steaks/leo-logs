@@ -14,8 +14,6 @@ services:
     ports:
       - "80:80"
       - "443:443"
-    environment:
-      LEO_LOGS_DOMAIN: ${LEO_LOGS_DOMAIN:?Set LEO_LOGS_DOMAIN to the public hostname}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy:/data
