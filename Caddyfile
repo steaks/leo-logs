@@ -1,7 +1,4 @@
-# Replace :80 with the public hostname to serve HTTPS.
-# logs.example.com {
+# Replace leologs.dev with your url
+# leologs.dev {
 #	reverse_proxy leo-logs:3000
 # }
-:80 {
-	reverse_proxy leo-logs:3000
-}
