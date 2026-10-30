@@ -1,0 +1,1 @@
+import{_ as t,o as a,c as s,a2 as o}from"./chunks/framework.CdvW4CUT.js";const u=JSON.parse('{"title":"Run the log page","description":"","frontmatter":{},"headers":[],"relativePath":"run.md","filePath":"run.md"}'),r={name:"run.md"};function i(d,e,n,p,h,l){return a(),s("div",null,[...e[0]||(e[0]=[o("",6)])])}const g=t(r,[["render",i]]);export{u as __pageData,g as default};

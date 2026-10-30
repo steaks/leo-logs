@@ -1,0 +1,33 @@
+{
+  "name": "leo-logs-workspace",
+  "private": true,
+  "description": "Leo Logs workspace: OpenRouter logs for pipelines and agents.",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "workspaces": [
+    "packages/trace",
+    "packages/ui"
+  ],
+  "scripts": {
+    "build": "npm run build -w @leo-logs/trace && npm run build -w @leo-logs/ui",
+    "typecheck": "npm run typecheck -w @leo-logs/trace && npm run typecheck -w @leo-logs/ui && tsc -p examples/tsconfig.json --noEmit",
+    "test": "npm test -w @leo-logs/trace && npm test -w @leo-logs/ui",
+    "leo-logs": "npm run build -w @leo-logs/trace && node --import tsx packages/ui/src/bin.ts",
+    "ui": "npm run build -w @leo-logs/trace && node --import tsx packages/ui/src/bin.ts ui",
+    "example": "npm run build -w @leo-logs/trace && node --import tsx examples/calls.ts",
+    "docs": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
+  },
+  "devDependencies": {
+    "@openrouter/agent": "^0.11.0",
+    "@openrouter/sdk": "^0.13.67",
+    "@types/node": "^24.0.0",
+    "@leo-logs/trace": "*",
+    "tsx": "^4.20.6",
+    "typescript": "^5.2.2",
+    "vitepress": "^1.6.4",
+    "zod": "^4.6.7"
+  }
+}

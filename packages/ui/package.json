@@ -1,0 +1,27 @@
+{
+  "name": "@leo-logs/ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Leo Logs: OpenRouter logs for pipelines and agents.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "leo-logs": "./dist/bin.js"
+  },
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "npm run build -w @leo-logs/trace && tsc --noEmit",
+    "test": "npm run build -w @leo-logs/trace && node --import tsx --test src/*.test.ts"
+  },
+  "dependencies": {
+    "@leo-logs/trace": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.2.2"
+  }
+}

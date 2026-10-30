@@ -1,0 +1,3 @@
+{$LEO_LOGS_DOMAIN:leologs.dev} {
+	reverse_proxy leo-logs:8787
+}

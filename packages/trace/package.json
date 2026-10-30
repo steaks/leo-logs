@@ -1,0 +1,21 @@
+{
+  "name": "@leo-logs/trace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Trace ids for OpenRouter pipeline and agent calls.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.2.2"
+  }
+}
