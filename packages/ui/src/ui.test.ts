@@ -258,7 +258,11 @@ describe('log ui', () => {
     try {
       const first = await fetch(`${ui.url}/`);
       assert.equal(first.status, 200);
-      assert.match(await first.text(), /Create the login/);
+      const setupHtml = await first.text();
+      assert.match(setupHtml, /Getting started/);
+      assert.match(setupHtml, /Create your account/);
+      assert.match(setupHtml, /name="confirm"/);
+      assert.doesNotMatch(setupHtml, /Sign in to the log page/);
       const locked = await fetch(`${ui.url}/api/catalog`);
       assert.equal(locked.status, 401);
       const short = await fetch(`${ui.url}/setup`, {
@@ -324,6 +328,25 @@ describe('log ui', () => {
         body: JSON.stringify({ current: 'password1', password: 'password2' }),
       });
       assert.equal(changed.status, 200);
+      assert.match(logsHtml, /id="settings-logout"/);
+      const loggedOut = await fetch(`${ui.url}/logout`, { method: 'POST', headers: { cookie } });
+      assert.equal(loggedOut.status, 200);
+      assert.match(loggedOut.headers.get('set-cookie') ?? '', /leo_logs=;/);
+      assert.match(loggedOut.headers.get('set-cookie') ?? '', /Max-Age=0/);
+      const signedOut = await fetch(`${ui.url}/api/settings`, { headers: { cookie } });
+      assert.equal(signedOut.status, 401);
+      const signIn = await fetch(`${ui.url}/`);
+      assert.match(await signIn.text(), /Sign in/);
+      const back = await fetch(`${ui.url}/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: 'mina', password: 'password2' }),
+      });
+      assert.equal(back.status, 200);
+      const nextCookie = (back.headers.get('set-cookie') ?? '').split(';')[0];
+      const home = await fetch(`${ui.url}/`, { headers: { cookie: nextCookie } });
+      assert.equal(home.status, 200);
+      assert.match(await home.text(), /Pipelines/);
       const rejected = await fetch(`${ui.url}/login`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

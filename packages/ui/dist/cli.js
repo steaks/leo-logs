@@ -13,7 +13,7 @@ The page lists pipelines and agents from the SQLite log. OpenRouter posts traces
 The file is .leo-logs/logs.db. LEO_LOGS_DB overrides that path.
 LEO_LOGS_TOKEN, when set, requires Authorization: Bearer on POST /traces.
 
---port   Default: 8787. The server listens on 127.0.0.1.
+--port   Default: 3000. The server listens on 127.0.0.1.
 `.trim();
 const positiveInt = (value) => {
     if (!/^[1-9]\d*$/.test(value))
@@ -32,7 +32,7 @@ const main = async (argv, io) => {
         io.stderr.write('Unknown command. Use leo-logs ui.\n');
         return 1;
     }
-    let port = 8787;
+    let port = 3000;
     try {
         const parsed = (0, node_util_1.parseArgs)({
             args: argv.slice(1),

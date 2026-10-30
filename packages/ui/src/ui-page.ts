@@ -146,7 +146,7 @@ export const logPage = (): string => `<!DOCTYPE html>
     .multi-menu input { width: auto; height: auto; min-width: 0; }
     #columns-button { width: auto; min-width: 0; }
     #columns-menu { max-height: min(480px, 70vh); }
-    input:focus, select:focus, nav button:focus-visible, th button:focus-visible, .multi > button:focus-visible, .back:focus-visible, #export:focus-visible {
+    input:focus, select:focus, nav button:focus-visible, th button:focus-visible, .multi > button:focus-visible, .back:focus-visible, #export:focus-visible, .settings button:focus-visible {
       outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
@@ -270,24 +270,60 @@ export const logPage = (): string => `<!DOCTYPE html>
       font-size: 13px;
       line-height: 1.5;
     }
-    .settings { max-width: 560px; }
-    .settings h2 { margin: 22px 0 8px; font-size: 16px; }
-    .settings p { margin: 0 0 8px; }
+    .settings { display: flex; flex-direction: column; gap: 14px; max-width: 640px; }
+    .settings-card,
+    .settings form {
+      display: flex;
+      flex-direction: column;
+      flex-wrap: nowrap;
+      align-items: stretch;
+      justify-content: flex-start;
+      gap: 14px;
+      width: 100%;
+      margin: 0;
+      padding: 18px 18px 20px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    .settings h2 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -0.02em; }
+    .settings .lede { margin: -6px 0 0; color: var(--muted); font-size: 13px; }
+    .settings .field-block { display: flex; flex-direction: column; gap: 6px; }
+    .settings .field-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 28px; }
+    .settings .field-label { color: var(--muted); font-size: 12px; font-weight: 550; }
+    .settings .account { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.02em; }
+    #settings-url,
     .settings pre {
       margin: 0;
       padding: 12px;
       overflow: auto;
       white-space: pre-wrap;
-      background: var(--card);
+      word-break: break-all;
+      background: #101010;
+      color: var(--ink);
       border: 1px solid var(--line);
       border-radius: 8px;
       font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
       font-size: 12px;
+      line-height: 1.5;
     }
-    .settings label { align-items: stretch; width: 100%; max-width: 360px; margin-bottom: 10px; }
+    .settings label {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 6px;
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 550;
+    }
     .settings input { width: 100%; }
+    .settings .form-actions { display: flex; align-items: center; gap: 12px; }
     .settings button {
       height: 34px;
+      padding: 0 14px;
       border: 0;
       border-radius: 8px;
       background: var(--accent);
@@ -296,7 +332,28 @@ export const logPage = (): string => `<!DOCTYPE html>
       font-weight: 650;
       cursor: pointer;
     }
-    .settings .warn { color: #ffb4b4; }
+    .settings button:hover { filter: brightness(1.06); }
+    .settings button.ghost {
+      height: 28px;
+      padding: 0 10px;
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      font-size: 12px;
+      font-weight: 600;
+      filter: none;
+    }
+    .settings button.ghost:hover { border-color: #454545; background: var(--hover); filter: none; }
+    .settings button.secondary {
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      filter: none;
+    }
+    .settings button.secondary:hover { border-color: #454545; background: var(--hover); filter: none; }
+    .settings .warn { margin: 0; color: #ffb4b4; font-size: 13px; }
+    .settings .warn.ok { color: var(--accent); }
+    .settings .warn:empty { display: none; }
     @media (max-width: 800px) {
       body { flex-direction: column; }
       aside { flex: none; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -377,18 +434,40 @@ export const logPage = (): string => `<!DOCTYPE html>
     </div>
     <div id="detail"></div>
     <section id="settings" class="settings" hidden>
-      <h2>Account</h2>
-      <p id="settings-username"></p>
-      <h2>OpenRouter webhook</h2>
-      <p>POST traces to this URL. The header is the access token.</p>
-      <p id="settings-url" class="notice"></p>
-      <pre id="settings-token"></pre>
-      <form id="settings-password">
+      <div class="settings-card">
+        <h2>Account</h2>
+        <div class="field-block">
+          <span class="field-label">Username</span>
+          <p id="settings-username" class="account"></p>
+        </div>
+        <div class="form-actions">
+          <button id="settings-logout" class="secondary" type="button">Log out</button>
+        </div>
+      </div>
+      <div class="settings-card">
+        <h2>OpenRouter webhook</h2>
+        <p class="lede">POST traces to this URL. The header is the access token.</p>
+        <div class="field-block">
+          <span class="field-label">Endpoint</span>
+          <p id="settings-url"></p>
+        </div>
+        <div class="field-block">
+          <div class="field-head">
+            <span class="field-label">Header</span>
+            <button id="settings-copy" class="ghost" type="button">Copy</button>
+          </div>
+          <pre id="settings-token"></pre>
+        </div>
+      </div>
+      <form id="settings-password" class="settings-card">
         <h2>Password</h2>
+        <p class="lede">At least 8 characters.</p>
         <label>Current password <input name="current" type="password" autocomplete="current-password" required></label>
         <label>New password <input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
-        <button type="submit">Change password</button>
-        <p id="settings-password-message" class="warn"></p>
+        <div class="form-actions">
+          <button type="submit">Change password</button>
+          <p id="settings-password-message" class="warn"></p>
+        </div>
       </form>
     </section>
   </main>
@@ -446,6 +525,8 @@ export const logPage = (): string => `<!DOCTYPE html>
     const settingsToken = document.getElementById('settings-token');
     const settingsPassword = document.getElementById('settings-password');
     const settingsPasswordMessage = document.getElementById('settings-password-message');
+    const settingsCopy = document.getElementById('settings-copy');
+    const settingsLogout = document.getElementById('settings-logout');
     const filters = document.getElementById('filters');
     const filterWindow = document.getElementById('filter-window');
     const filterList = document.getElementById('filter-list');
@@ -1086,6 +1167,7 @@ export const logPage = (): string => `<!DOCTYPE html>
       hideStats();
       detail.replaceChildren();
       settingsPasswordMessage.textContent = '';
+      settingsPasswordMessage.classList.remove('ok');
       const response = await fetch('/api/settings');
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -1096,6 +1178,7 @@ export const logPage = (): string => `<!DOCTYPE html>
       settingsUrl.textContent = payload.tracesUrl || '';
       settingsToken.textContent = payload.token ? 'Authorization: Bearer ' + payload.token : '';
       settingsPassword.hidden = !payload.canChangePassword;
+      settingsLogout.hidden = !payload.canChangePassword;
     };
 
     const showAgents = () => {
@@ -1660,6 +1743,7 @@ export const logPage = (): string => `<!DOCTYPE html>
     settingsPassword.addEventListener('submit', async (event) => {
       event.preventDefault();
       settingsPasswordMessage.textContent = '';
+      settingsPasswordMessage.classList.remove('ok');
       const data = new FormData(settingsPassword);
       const response = await fetch('/api/password', {
         method: 'POST',
@@ -1668,7 +1752,28 @@ export const logPage = (): string => `<!DOCTYPE html>
       });
       const payload = await response.json().catch(() => ({}));
       settingsPasswordMessage.textContent = response.ok ? 'Password changed' : (payload.error || 'Could not change the password');
+      settingsPasswordMessage.classList.toggle('ok', response.ok);
       if (response.ok) settingsPassword.reset();
+    });
+    settingsLogout.addEventListener('click', async () => {
+      settingsLogout.disabled = true;
+      const response = await fetch('/logout', { method: 'POST' });
+      if (response.ok) {
+        location.assign('/');
+        return;
+      }
+      settingsLogout.disabled = false;
+    });
+    settingsCopy.addEventListener('click', async () => {
+      const text = settingsToken.textContent || '';
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        settingsCopy.textContent = 'Copied';
+      } catch {
+        settingsCopy.textContent = 'Copy failed';
+      }
+      setTimeout(() => { settingsCopy.textContent = 'Copy'; }, 1500);
     });
     filterWindow.addEventListener('change', () => { replaceFilters(); loadCatalog(); });
     filterModelButton.addEventListener('click', () => {

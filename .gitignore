@@ -1,0 +1,14 @@
+.leo-logs/
+
+node_modules/
+
+.env
+.env.*
+!.env.example
+
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+
+*.log
+*.tsbuildinfo
+.DS_Store

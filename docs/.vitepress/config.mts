@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress';
 
 export default defineConfig({
   title: 'Leo Logs',
-  description: 'OpenRouter logs for pipelines and agents. leologs.dev',
+  description: 'OpenRouter logs for pipelines and agents.',
   themeConfig: {
     nav: [
       { text: 'Pipelines', link: '/pipelines' },

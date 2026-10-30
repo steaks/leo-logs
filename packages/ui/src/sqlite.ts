@@ -87,6 +87,7 @@ export interface LogDb {
   checkAccount(username: string, password: string): boolean;
   openSession(): string;
   validSession(token: string): boolean;
+  closeSession(token: string): void;
   insert(spans: LogSpan[]): number;
   close(): void;
 }
@@ -387,6 +388,10 @@ export const openLogs = (env: NodeJS.ProcessEnv): LogDb => {
         return false;
       }
       return true;
+    },
+    closeSession(token) {
+      if (!token) return;
+      dropSession.run(sessionHash(token));
     },
     source: {
       catalog: async (input) => {

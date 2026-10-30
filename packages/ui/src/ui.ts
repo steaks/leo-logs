@@ -164,6 +164,11 @@ const sessionCookie = (token: string, request: IncomingMessage): string => {
   return `leo_logs=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=2592000${secure ? '; Secure' : ''}`;
 };
 
+const clearSessionCookie = (request: IncomingMessage): string => {
+  const secure = request.headers['x-forwarded-proto'] === 'https';
+  return `leo_logs=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${secure ? '; Secure' : ''}`;
+};
+
 const formCredentials = (body: unknown): { username: string; password: string } | string => {
   if (!body || typeof body !== 'object') return 'Expected a username and password';
   const username = (body as { username?: unknown }).username;
@@ -303,6 +308,16 @@ const handle = async (
       return;
     }
   } else if (logs && !await admit(logs, request, response, url, method)) {
+    return;
+  }
+  if (url.pathname === '/logout' && method === 'POST') {
+    logs?.closeSession(cookieValue(request, 'leo_logs'));
+    response.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'set-cookie': clearSessionCookie(request),
+    });
+    response.end(JSON.stringify({ ok: true }));
     return;
   }
   if (url.pathname === '/api/settings' && method === 'GET') {

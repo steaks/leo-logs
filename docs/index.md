@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Leo Logs
   text: OpenRouter logs
-  tagline: Pipelines and agents for your OpenRouter calls. The site is leologs.dev.
+  tagline: Pipelines and agents for your OpenRouter calls.
   actions:
     - theme: brand
       text: Pipelines

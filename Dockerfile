@@ -13,5 +13,5 @@ COPY packages ./packages
 RUN npm ci --omit=dev
 COPY --from=build /app/packages/trace/dist ./packages/trace/dist
 COPY --from=build /app/packages/ui/dist ./packages/ui/dist
-EXPOSE 8787
+EXPOSE 3000
 CMD ["node", "packages/ui/dist/bin.js", "ui"]

@@ -12,7 +12,7 @@ The file is .leo-logs/logs.db. LEO_LOGS_DB overrides that path.
 With no saved login, the first page visit creates the username and password, then an access token for OpenRouter. Both are saved in the SQLite file.
 LEO_LOGS_TOKEN, when set, is used as that token instead.
 
---port   Default: 8787. The server listens on all interfaces.
+--port   Default: 3000. The server listens on all interfaces.
 `.trim();
 
 export interface CliIo {
@@ -37,7 +37,7 @@ export const main = async (argv: string[], io: CliIo): Promise<number> => {
     io.stderr.write('Unknown command. Use leo-logs ui.\n');
     return 1;
   }
-  let port = 8787;
+  let port = 3000;
   try {
     const parsed = parseArgs({
       args: argv.slice(1),

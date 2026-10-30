@@ -1,6 +1,6 @@
 # Leo Logs
 
-OpenRouter logs for pipelines and agents. The domain is [leologs.dev](https://leologs.dev).
+OpenRouter logs for pipelines and agents.
 
 `@leo-logs/trace` builds the id that groups a pipeline and the agents inside it. Callers use `@openrouter/agent` or `@openrouter/sdk` themselves and put that id on the request.
 
@@ -51,7 +51,7 @@ await client.chat.send({
 
 ## Logs
 
-`leo-logs ui` listens on port `8787`. On this machine the page is [http://127.0.0.1:8787](http://127.0.0.1:8787).
+`leo-logs ui` listens on port `3000`. On this machine the page is [http://127.0.0.1:3000](http://127.0.0.1:3000).
 
 ```bash
 npm run ui
@@ -63,11 +63,10 @@ The page lists pipelines and the agents recorded under them, plus agents called 
 
 The page reads the last 30 days, up to 200 rows. Older rows are deleted. A pipeline or agent appears after a trace for it has been posted.
 
-On the VM, with ports 80 and 443 open and `leologs.dev` pointed at it:
+On the VM, open ports 80 and 443 and point a DNS name at it. Copy `.env.example` to `.env` and set `LEO_LOGS_DOMAIN` to that name. Then:
 
 ```bash
-cp .env.example .env
 docker compose up -d
 ```
 
-Caddy serves `https://leologs.dev/`. The first visit asks you to create a username and password, then shows the access token and where to paste it in OpenRouter. The SQLite file stays on the `leo-logs` volume.
+Caddy requests a certificate for `LEO_LOGS_DOMAIN` and serves the page there. The first visit asks you to create a username and password, then shows the access token and where to paste it in OpenRouter. The SQLite file stays on the `leo-logs` volume.
