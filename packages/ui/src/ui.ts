@@ -4,6 +4,7 @@ import { parseTraceId } from '@leo-logs/trace';
 import { spansFromOtlp } from './otlp';
 import { openRouterProviders } from './openrouter';
 import { traceQuery, type TraceQuery } from './query';
+import { accessPage } from './access-page';
 import { openLogs, type LogDb, type LogRow, type LogSource } from './sqlite';
 import { logPage } from './ui-page';
 
@@ -94,20 +95,144 @@ const readBody = (request: IncomingMessage): Promise<string> => new Promise((res
   request.on('error', reject);
 });
 
+const sameSecret = (presented: string, expected: string): boolean => {
+  const left = Buffer.from(presented);
+  const right = Buffer.from(expected);
+  return left.length === right.length && timingSafeEqual(left, right);
+};
+
 /** `LEO_LOGS_TOKEN`, when set, is the bearer token OpenRouter sends on POST /traces. */
 const authorized = (request: IncomingMessage, token: string): boolean => {
   if (!token) return true;
   const header = request.headers.authorization;
   const presented = typeof header === 'string' && header.startsWith('Bearer ') ? header.slice('Bearer '.length) : '';
-  const left = Buffer.from(presented);
-  const right = Buffer.from(token);
-  return left.length === right.length && timingSafeEqual(left, right);
+  return sameSecret(presented, token);
+};
+
+/** `LEO_LOGS_USER` and `LEO_LOGS_PASSWORD` lock the page. POST /traces stays on the bearer token. */
+const pageCredentials = (env: NodeJS.ProcessEnv): { user: string; password: string } | null => {
+  const user = env.LEO_LOGS_USER?.trim() ?? '';
+  const password = env.LEO_LOGS_PASSWORD?.trim() ?? '';
+  if (!user && !password) return null;
+  if (!user || !password) throw new Error('Set both LEO_LOGS_USER and LEO_LOGS_PASSWORD');
+  return { user, password };
+};
+
+const signedIn = (request: IncomingMessage, user: string, password: string): boolean => {
+  const header = request.headers.authorization;
+  if (typeof header !== 'string' || !header.startsWith('Basic ')) return false;
+  const decoded = Buffer.from(header.slice('Basic '.length), 'base64').toString('utf8');
+  const split = decoded.indexOf(':');
+  if (split < 0) return false;
+  return sameSecret(decoded.slice(0, split), user) && sameSecret(decoded.slice(split + 1), password);
+};
+
+const denyPage = (response: ServerResponse) => {
+  response.writeHead(401, {
+    'content-type': 'text/plain; charset=utf-8',
+    'cache-control': 'no-store',
+    'www-authenticate': 'Basic realm="Leo Logs"',
+  });
+  response.end('Unauthorized');
+};
+
+const PAGE_PATHS = new Set(['/', '/sessions', '/session', '/agents', '/executions', '/execution']);
+
+const cookieValue = (request: IncomingMessage, name: string): string => {
+  const header = request.headers.cookie;
+  if (!header) return '';
+  for (const part of header.split(';')) {
+    const text = part.trim();
+    const split = text.indexOf('=');
+    if (split < 0 || text.slice(0, split) !== name) continue;
+    return decodeURIComponent(text.slice(split + 1));
+  }
+  return '';
+};
+
+const sessionCookie = (token: string, request: IncomingMessage): string => {
+  const secure = request.headers['x-forwarded-proto'] === 'https';
+  return `leo_logs=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=2592000${secure ? '; Secure' : ''}`;
+};
+
+const formCredentials = (body: unknown): { username: string; password: string } | string => {
+  if (!body || typeof body !== 'object') return 'Expected a username and password';
+  const username = (body as { username?: unknown }).username;
+  const password = (body as { password?: unknown }).password;
+  if (typeof username !== 'string' || !username.trim()) return 'Username is required';
+  if (username.trim().length > 64) return 'Username is too long';
+  if (typeof password !== 'string' || password.length < 8) return 'Password must be at least 8 characters';
+  return { username: username.trim(), password };
+};
+
+const sendSession = (response: ServerResponse, request: IncomingMessage, token: string) => {
+  response.writeHead(200, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'set-cookie': sessionCookie(token, request),
+  });
+  response.end(JSON.stringify({ ok: true }));
+};
+
+/** Lets the request through once a saved login has a session. Returns false when the response is already sent. */
+const admit = async (logs: LogDb, request: IncomingMessage, response: ServerResponse, url: URL, method: string): Promise<boolean> => {
+  const account = logs.hasAccount();
+  if ((url.pathname === '/setup' || url.pathname === '/login') && method === 'POST') {
+    return saveLogin(logs, request, response, url.pathname === '/setup', account);
+  }
+  if (logs.validSession(cookieValue(request, 'leo_logs'))) return true;
+  if (PAGE_PATHS.has(url.pathname) && method === 'GET') {
+    send(response, 200, accessPage(account ? 'login' : 'setup'), 'text/html; charset=utf-8');
+    return false;
+  }
+  if (url.pathname === '/api/catalog' || url.pathname === '/api/rows' || url.pathname === '/api/providers') {
+    send(response, 401, { error: account ? 'Sign in required' : 'Create the login first' }, 'application/json; charset=utf-8');
+    return false;
+  }
+  return true;
+};
+
+const saveLogin = async (logs: LogDb, request: IncomingMessage, response: ServerResponse, setup: boolean, account: boolean): Promise<boolean> => {
+  if (setup && account) {
+    send(response, 409, { error: 'A login already exists' }, 'application/json; charset=utf-8');
+    return false;
+  }
+  if (!setup && !account) {
+    send(response, 404, { error: 'Create the login first' }, 'application/json; charset=utf-8');
+    return false;
+  }
+  let body: unknown;
+  try {
+    body = JSON.parse(await readBody(request)) as unknown;
+  } catch {
+    send(response, 400, { error: 'Expected a username and password' }, 'application/json; charset=utf-8');
+    return false;
+  }
+  const credentials = formCredentials(body);
+  if (typeof credentials === 'string') {
+    send(response, 400, { error: credentials }, 'application/json; charset=utf-8');
+    return false;
+  }
+  if (setup) {
+    try {
+      logs.createAccount(credentials.username, credentials.password);
+    } catch {
+      send(response, 409, { error: 'A login already exists' }, 'application/json; charset=utf-8');
+      return false;
+    }
+  } else if (!logs.checkAccount(credentials.username, credentials.password)) {
+    send(response, 401, { error: 'Wrong username or password' }, 'application/json; charset=utf-8');
+    return false;
+  }
+  sendSession(response, request, logs.openSession());
+  return false;
 };
 
 const handle = async (
   source: LogSource,
   logs: LogDb | null,
   token: string,
+  login: { user: string; password: string } | null,
   providers: () => Promise<Record<string, string>>,
   request: IncomingMessage,
   response: ServerResponse,
@@ -144,6 +269,14 @@ const handle = async (
     }
     const spans = logs.insert(spansFromOtlp(body));
     send(response, 200, { ok: true, spans }, 'application/json; charset=utf-8');
+    return;
+  }
+  if (login) {
+    if (!signedIn(request, login.user, login.password)) {
+      denyPage(response);
+      return;
+    }
+  } else if (logs && !await admit(logs, request, response, url, method)) {
     return;
   }
   if (url.pathname === '/api/providers') {
@@ -200,6 +333,7 @@ export const startLogUi = async (options: LogUiOptions): Promise<LogUi> => {
   const source = options.source ?? logs?.source;
   if (!source) throw new Error('UI server has no log source');
   const token = options.env.LEO_LOGS_TOKEN?.trim() ?? '';
+  const login = pageCredentials(options.env);
   let cachedProviders: Record<string, string> | null = null;
   const providers = options.providers ?? (async () => {
     if (cachedProviders) return cachedProviders;
@@ -207,7 +341,7 @@ export const startLogUi = async (options: LogUiOptions): Promise<LogUi> => {
     return cachedProviders;
   });
   const server = createServer((request, response) => {
-    handle(source, logs, token, providers, request, response).catch((error: unknown) => {
+    handle(source, logs, token, login, providers, request, response).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       if (!response.headersSent) send(response, 500, { error: message }, 'application/json; charset=utf-8');
       else response.end();

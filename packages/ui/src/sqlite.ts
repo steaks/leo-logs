@@ -1,3 +1,4 @@
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -76,9 +77,20 @@ export interface LogSource {
 export interface LogDb {
   path: string;
   source: LogSource;
+  hasAccount(): boolean;
+  createAccount(username: string, password: string): void;
+  checkAccount(username: string, password: string): boolean;
+  openSession(): string;
+  validSession(token: string): boolean;
   insert(spans: LogSpan[]): number;
   close(): void;
 }
+
+const sameSecretText = (left: string, right: string): boolean => {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  return a.length === b.length && timingSafeEqual(a, b);
+};
 
 const jsonText = (value: unknown): string | null => {
   if (value == null) return null;
@@ -227,7 +239,25 @@ export const openLogs = (env: NodeJS.ProcessEnv): LogDb => {
     );
     CREATE INDEX IF NOT EXISTS spans_timestamp ON spans (timestamp);
     CREATE INDEX IF NOT EXISTS spans_session ON spans (session_id);
+    CREATE TABLE IF NOT EXISTS account (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      username TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      password_salt TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS sessions (
+      token_hash TEXT PRIMARY KEY,
+      expires_at INTEGER NOT NULL
+    );
   `);
+  const passwordHash = (password: string, salt: Buffer): string => scryptSync(password, salt, 32).toString('hex');
+  const sessionHash = (token: string): string => createHash('sha256').update(token).digest('hex');
+  const readAccount = db.prepare('SELECT username, password_hash, password_salt FROM account WHERE id = 1');
+  const writeAccount = db.prepare('INSERT INTO account (id, username, password_hash, password_salt) VALUES (1, ?, ?, ?)');
+  const writeSession = db.prepare('INSERT INTO sessions (token_hash, expires_at) VALUES (?, ?)');
+  const readSession = db.prepare('SELECT expires_at FROM sessions WHERE token_hash = ?');
+  const dropSession = db.prepare('DELETE FROM sessions WHERE token_hash = ?');
+  const dropExpired = db.prepare('DELETE FROM sessions WHERE expires_at <= ?');
   const insert = db.prepare(`
     INSERT INTO spans (
       trace_id, span_id, parent_span_id, user_id, session_id, timestamp, duration_ms,
@@ -286,6 +316,38 @@ export const openLogs = (env: NodeJS.ProcessEnv): LogDb => {
   };
   return {
     path,
+    hasAccount: () => readAccount.get() != null,
+    createAccount(username, password) {
+      if (readAccount.get() != null) throw new Error('A login already exists');
+      const salt = randomBytes(16);
+      writeAccount.run(username, passwordHash(password, salt), salt.toString('hex'));
+    },
+    checkAccount(username, password) {
+      const row = readAccount.get() as { username: string; password_hash: string; password_salt: string } | undefined;
+      if (!row) return false;
+      const hash = Buffer.from(passwordHash(password, Buffer.from(row.password_salt, 'hex')), 'hex');
+      const stored = Buffer.from(row.password_hash, 'hex');
+      const samePassword = hash.length === stored.length && timingSafeEqual(hash, stored);
+      const sameName = sameSecretText(username, row.username);
+      return samePassword && sameName;
+    },
+    openSession() {
+      dropExpired.run(Date.now());
+      const token = randomBytes(32).toString('hex');
+      writeSession.run(sessionHash(token), Date.now() + 30 * 24 * 60 * 60 * 1000);
+      return token;
+    },
+    validSession(token) {
+      if (!token) return false;
+      const hash = sessionHash(token);
+      const row = readSession.get(hash) as { expires_at: number } | undefined;
+      if (!row) return false;
+      if (row.expires_at <= Date.now()) {
+        dropSession.run(hash);
+        return false;
+      }
+      return true;
+    },
     source: {
       catalog: async (input) => {
         forget();

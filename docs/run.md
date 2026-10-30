@@ -19,9 +19,11 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Set `LEO_LOGS_TOKEN` in `.env` before that command. Caddy gets the certificate and serves `https://leologs.dev/`. The webhook URL is `https://leologs.dev/traces`, with header `Authorization: Bearer` set to the token. `LEO_LOGS_DOMAIN` overrides the site name. The SQLite file stays on the `leo-logs` volume.
+Set `LEO_LOGS_TOKEN` in `.env` before that command. Caddy gets the certificate and serves `https://leologs.dev/`. The first visit asks you to create a username and password. Later visits ask you to sign in. The webhook URL is `https://leologs.dev/traces`, with header `Authorization: Bearer` set to the token. `LEO_LOGS_DOMAIN` overrides the site name. The SQLite file stays on the `leo-logs` volume.
 
 | Variable | Role |
 |---|---|
 | `LEO_LOGS_DB` | SQLite file. Omitted means `.leo-logs/logs.db`. |
 | `LEO_LOGS_TOKEN` | When set, `POST /traces` requires `Authorization: Bearer` with this value. |
+| `LEO_LOGS_USER` | Optional page username. When set with `LEO_LOGS_PASSWORD`, the setup screen is skipped. |
+| `LEO_LOGS_PASSWORD` | Optional page password. |

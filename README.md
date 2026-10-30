@@ -57,7 +57,7 @@ await client.chat.send({
 npm run ui
 ```
 
-OpenRouter posts each trace to `POST /traces` on that server. The spans are stored in SQLite. The file is `.leo-logs/logs.db`. `LEO_LOGS_DB` overrides that path. `LEO_LOGS_TOKEN`, when set, requires `Authorization: Bearer` on that post.
+OpenRouter posts each trace to `POST /traces` on that server. The spans are stored in SQLite. The file is `.leo-logs/logs.db`. `LEO_LOGS_DB` overrides that path. `LEO_LOGS_TOKEN`, when set, requires `Authorization: Bearer` on that post. The first visit to a new log file asks you to create a username and password. After that, the page asks you to sign in. `LEO_LOGS_USER` and `LEO_LOGS_PASSWORD`, when both set, require that login instead of the setup screen.
 
 The page lists pipelines and the agents recorded under them, plus agents called with no pipeline. A pipeline shows every row whose `trace_id` is that pipeline or starts with `{pipeline trace id}_agent:`. An agent shows rows with its exact `trace_id`. Each row has time, status, model, provider, tokens, cost, and duration. Opening a row shows input, output, and metadata.
 
@@ -70,4 +70,4 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Set `LEO_LOGS_TOKEN` in `.env` first. Caddy serves `https://leologs.dev/` and OpenRouter posts to `https://leologs.dev/traces` with `Authorization: Bearer` set to that token. The SQLite file stays on the `leo-logs` volume.
+Set `LEO_LOGS_TOKEN` in `.env` first. Caddy serves `https://leologs.dev/`. The first visit asks you to create a username and password, and later visits ask you to sign in. OpenRouter posts to `https://leologs.dev/traces` with `Authorization: Bearer` set to the token. The SQLite file stays on the `leo-logs` volume.

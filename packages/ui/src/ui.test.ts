@@ -197,7 +197,14 @@ describe('log ui', () => {
     const file = join(dir, 'logs.db');
     const ui = await startLogUi({ port: 0, env: { LEO_LOGS_DB: file, LEO_LOGS_TOKEN: 'secret' } });
     try {
-      const empty = await fetch(`${ui.url}/api/catalog`);
+      const setup = await fetch(`${ui.url}/setup`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: 'mina', password: 'password1' }),
+      });
+      assert.equal(setup.status, 200);
+      const cookie = (setup.headers.get('set-cookie') ?? '').split(';')[0];
+      const empty = await fetch(`${ui.url}/api/catalog`, { headers: { cookie } });
       const catalog = await empty.json() as { configured: boolean; message: string | null; table: string; pipelines: unknown[] };
       assert.equal(catalog.configured, true);
       assert.equal(catalog.message, null);
@@ -232,11 +239,90 @@ describe('log ui', () => {
         }),
       });
       assert.equal(posted.status, 200);
-      const filled = await fetch(`${ui.url}/api/catalog`);
+      const filled = await fetch(`${ui.url}/api/catalog`, { headers: { cookie } });
       const body = await filled.json() as { pipelines: Array<{ name: string; calls: number; cost: number }> };
       assert.equal(body.pipelines[0]?.name, 'order-desk');
       assert.equal(body.pipelines[0]?.calls, 1);
       assert.equal(body.pipelines[0]?.cost, 0.3);
+    } finally {
+      await ui.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('shows setup on a new log file, then requires that login', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'leo-logs-'));
+    const ui = await startLogUi({ port: 0, env: { LEO_LOGS_DB: join(dir, 'logs.db'), LEO_LOGS_TOKEN: 'hook' } });
+    try {
+      const first = await fetch(`${ui.url}/`);
+      assert.equal(first.status, 200);
+      assert.match(await first.text(), /Create the login/);
+      const locked = await fetch(`${ui.url}/api/catalog`);
+      assert.equal(locked.status, 401);
+      const short = await fetch(`${ui.url}/setup`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: 'mina', password: 'short' }),
+      });
+      assert.equal(short.status, 400);
+      const created = await fetch(`${ui.url}/setup`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: 'mina', password: 'password1' }),
+      });
+      assert.equal(created.status, 200);
+      const again = await fetch(`${ui.url}/setup`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: 'mina', password: 'password1' }),
+      });
+      assert.equal(again.status, 409);
+      const wrong = await fetch(`${ui.url}/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: 'mina', password: 'password2' }),
+      });
+      assert.equal(wrong.status, 401);
+      const login = await fetch(`${ui.url}/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: 'mina', password: 'password1' }),
+      });
+      assert.equal(login.status, 200);
+      const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
+      const page = await fetch(`${ui.url}/`, { headers: { cookie } });
+      assert.match(await page.text(), /Pipelines/);
+      const posted = await fetch(`${ui.url}/traces`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer hook', 'x-test-connection': 'true' },
+      });
+      assert.equal(posted.status, 200);
+    } finally {
+      await ui.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('asks for the page login and still accepts the webhook token', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'leo-logs-'));
+    const ui = await startLogUi({
+      port: 0,
+      env: { LEO_LOGS_DB: join(dir, 'logs.db'), LEO_LOGS_USER: 'mina', LEO_LOGS_PASSWORD: 'secret', LEO_LOGS_TOKEN: 'hook' },
+    });
+    try {
+      const locked = await fetch(`${ui.url}/`);
+      assert.equal(locked.status, 401);
+      assert.match(locked.headers.get('www-authenticate') ?? '', /Basic/);
+      const catalog = await fetch(`${ui.url}/api/catalog`);
+      assert.equal(catalog.status, 401);
+      const page = await fetch(`${ui.url}/`, { headers: { authorization: `Basic ${Buffer.from('mina:secret').toString('base64')}` } });
+      assert.equal(page.status, 200);
+      const posted = await fetch(`${ui.url}/traces`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer hook', 'x-test-connection': 'true' },
+      });
+      assert.equal(posted.status, 200);
+      await assert.rejects(() => startLogUi({ port: 0, env: { LEO_LOGS_USER: 'mina' }, source }), /LEO_LOGS_USER/);
     } finally {
       await ui.close();
       rmSync(dir, { recursive: true, force: true });
