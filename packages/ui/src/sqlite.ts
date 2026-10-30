@@ -78,6 +78,8 @@ export interface LogDb {
   path: string;
   source: LogSource;
   hasAccount(): boolean;
+  username(): string | null;
+  changePassword(current: string, next: string): boolean;
   createAccount(username: string, password: string): string;
   webhookToken(): string | null;
   setupReady(): boolean;
@@ -263,6 +265,7 @@ export const openLogs = (env: NodeJS.ProcessEnv): LogDb => {
   const readAccount = db.prepare('SELECT username, password_hash, password_salt, webhook_token, ready FROM account WHERE id = 1');
   const writeAccount = db.prepare('INSERT INTO account (id, username, password_hash, password_salt, webhook_token, ready) VALUES (1, ?, ?, ?, ?, 0)');
   const markReady = db.prepare('UPDATE account SET ready = 1 WHERE id = 1');
+  const updatePassword = db.prepare('UPDATE account SET password_hash = ?, password_salt = ? WHERE id = 1');
   const writeSession = db.prepare('INSERT INTO sessions (token_hash, expires_at) VALUES (?, ?)');
   const readSession = db.prepare('SELECT expires_at FROM sessions WHERE token_hash = ?');
   const dropSession = db.prepare('DELETE FROM sessions WHERE token_hash = ?');
@@ -326,6 +329,20 @@ export const openLogs = (env: NodeJS.ProcessEnv): LogDb => {
   return {
     path,
     hasAccount: () => readAccount.get() != null,
+    username() {
+      const row = readAccount.get() as { username?: string } | undefined;
+      return row?.username ?? null;
+    },
+    changePassword(current, next) {
+      const row = readAccount.get() as { username: string; password_hash: string; password_salt: string } | undefined;
+      if (!row) return false;
+      const hash = Buffer.from(passwordHash(current, Buffer.from(row.password_salt, 'hex')), 'hex');
+      const stored = Buffer.from(row.password_hash, 'hex');
+      if (hash.length !== stored.length || !timingSafeEqual(hash, stored)) return false;
+      const salt = randomBytes(16);
+      updatePassword.run(passwordHash(next, salt), salt.toString('hex'));
+      return true;
+    },
     createAccount(username, password) {
       if (readAccount.get() != null) throw new Error('A login already exists');
       const salt = randomBytes(16);

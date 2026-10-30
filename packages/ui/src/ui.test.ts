@@ -306,7 +306,30 @@ describe('log ui', () => {
       const ready = await fetch(`${ui.url}/ready`, { method: 'POST', headers: { cookie } });
       assert.equal(ready.status, 200);
       const logs = await fetch(`${ui.url}/`, { headers: { cookie } });
-      assert.match(await logs.text(), /Pipelines/);
+      const logsHtml = await logs.text();
+      assert.match(logsHtml, /Pipelines/);
+      assert.match(logsHtml, /id="nav-settings"/);
+      const settingsPage = await fetch(`${ui.url}/settings`, { headers: { cookie } });
+      assert.equal(settingsPage.status, 200);
+      const settings = await fetch(`${ui.url}/api/settings`, { headers: { cookie } });
+      assert.equal(settings.status, 200);
+      const saved = await settings.json() as { username: string; token: string; tracesUrl: string; canChangePassword: boolean };
+      assert.equal(saved.username, 'mina');
+      assert.equal(saved.token, token);
+      assert.match(saved.tracesUrl, /\/traces$/);
+      assert.equal(saved.canChangePassword, true);
+      const changed = await fetch(`${ui.url}/api/password`, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ current: 'password1', password: 'password2' }),
+      });
+      assert.equal(changed.status, 200);
+      const rejected = await fetch(`${ui.url}/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: 'mina', password: 'password1' }),
+      });
+      assert.equal(rejected.status, 401);
     } finally {
       await ui.close();
       rmSync(dir, { recursive: true, force: true });

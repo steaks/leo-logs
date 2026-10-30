@@ -270,6 +270,33 @@ export const logPage = (): string => `<!DOCTYPE html>
       font-size: 13px;
       line-height: 1.5;
     }
+    .settings { max-width: 560px; }
+    .settings h2 { margin: 22px 0 8px; font-size: 16px; }
+    .settings p { margin: 0 0 8px; }
+    .settings pre {
+      margin: 0;
+      padding: 12px;
+      overflow: auto;
+      white-space: pre-wrap;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+      font-size: 12px;
+    }
+    .settings label { align-items: stretch; width: 100%; max-width: 360px; margin-bottom: 10px; }
+    .settings input { width: 100%; }
+    .settings button {
+      height: 34px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--accent);
+      color: var(--accent-ink);
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    .settings .warn { color: #ffb4b4; }
     @media (max-width: 800px) {
       body { flex-direction: column; }
       aside { flex: none; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -289,6 +316,7 @@ export const logPage = (): string => `<!DOCTYPE html>
     <nav>
       <button id="nav-pipelines" class="active" type="button">Pipelines</button>
       <button id="nav-agents" type="button">Agents</button>
+      <button id="nav-settings" type="button">Settings</button>
     </nav>
   </aside>
   <div class="workspace">
@@ -299,7 +327,7 @@ export const logPage = (): string => `<!DOCTYPE html>
       <h1 id="title">Pipelines</h1>
       <p id="notice" class="notice"></p>
     </div>
-    <div class="controls">
+    <div id="controls" class="controls">
     <form id="filters">
       <div class="filter-group">
         <span class="group-label">Time</span>
@@ -330,7 +358,7 @@ export const logPage = (): string => `<!DOCTYPE html>
     </div>
     </div>
     <section id="stats" class="stats" hidden></section>
-    <div class="table-bar">
+    <div id="table-bar" class="table-bar">
       <div class="multi" id="columns">
         <button id="columns-button" type="button" hidden>Columns</button>
         <div id="columns-menu" class="multi-menu" hidden></div>
@@ -348,6 +376,21 @@ export const logPage = (): string => `<!DOCTYPE html>
       </table>
     </div>
     <div id="detail"></div>
+    <section id="settings" class="settings" hidden>
+      <h2>Account</h2>
+      <p id="settings-username"></p>
+      <h2>OpenRouter webhook</h2>
+      <p>POST traces to this URL. The header is the access token.</p>
+      <p id="settings-url" class="notice"></p>
+      <pre id="settings-token"></pre>
+      <form id="settings-password">
+        <h2>Password</h2>
+        <label>Current password <input name="current" type="password" autocomplete="current-password" required></label>
+        <label>New password <input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
+        <button type="submit">Change password</button>
+        <p id="settings-password-message" class="warn"></p>
+      </form>
+    </section>
   </main>
   <aside id="messages-panel" class="panel" hidden role="dialog" aria-modal="true" aria-labelledby="messages-title">
     <button id="messages-close" class="close" type="button" aria-label="Close">×</button>
@@ -394,6 +437,15 @@ export const logPage = (): string => `<!DOCTYPE html>
     const stats = document.getElementById('stats');
     const navPipelines = document.getElementById('nav-pipelines');
     const navAgents = document.getElementById('nav-agents');
+    const navSettings = document.getElementById('nav-settings');
+    const controls = document.getElementById('controls');
+    const tableBar = document.getElementById('table-bar');
+    const settings = document.getElementById('settings');
+    const settingsUsername = document.getElementById('settings-username');
+    const settingsUrl = document.getElementById('settings-url');
+    const settingsToken = document.getElementById('settings-token');
+    const settingsPassword = document.getElementById('settings-password');
+    const settingsPasswordMessage = document.getElementById('settings-password-message');
     const filters = document.getElementById('filters');
     const filterWindow = document.getElementById('filter-window');
     const filterList = document.getElementById('filter-list');
@@ -530,6 +582,7 @@ export const logPage = (): string => `<!DOCTYPE html>
     const routeFromLocation = () => {
       const params = new URLSearchParams(location.search);
       const path = location.pathname;
+      if (path === '/settings') return { page: 'settings' };
       if (path !== '/' && path !== '/sessions' && path !== '/session' && path !== '/agents' && path !== '/executions' && path !== '/execution') return null;
       const pipeline = params.get('pipeline');
       const agent = params.get('agent');
@@ -550,6 +603,7 @@ export const logPage = (): string => `<!DOCTYPE html>
       return { page: 'pipelines' };
     };
     const addressFor = (route) => {
+      if (route.page === 'settings') return '/settings';
       const params = new URLSearchParams();
       const path = route.page === 'agents' ? '/agents'
         : route.page === 'agent' ? '/executions'
@@ -596,6 +650,12 @@ export const logPage = (): string => `<!DOCTYPE html>
     const setNav = (page) => {
       navPipelines.classList.toggle('active', page === 'pipelines');
       navAgents.classList.toggle('active', page === 'agents');
+      navSettings.classList.toggle('active', page === 'settings');
+    };
+    const showLogChrome = () => {
+      settings.hidden = true;
+      controls.hidden = false;
+      tableBar.hidden = false;
     };
 
     const cellText = (value) => {
@@ -871,6 +931,7 @@ export const logPage = (): string => `<!DOCTYPE html>
     };
 
     const showSummary = () => {
+      showLogChrome();
       summary.hidden = false;
       calls.hidden = true;
       hideStats();
@@ -961,6 +1022,7 @@ export const logPage = (): string => `<!DOCTYPE html>
       arrangeFilters('calls');
       title.textContent = 'Pipeline session';
       notice.textContent = execution.traceId;
+      showLogChrome();
       summary.hidden = true;
       calls.hidden = false;
       detail.replaceChildren();
@@ -1007,6 +1069,33 @@ export const logPage = (): string => `<!DOCTYPE html>
           serverButtons(calls),
         ];
       }, showDetail, 'No agent calls in this session.');
+    };
+
+    const showSettings = async () => {
+      current = showSettings;
+      writeRoute({ page: 'settings' });
+      setNav('settings');
+      back.hidden = true;
+      title.textContent = 'Settings';
+      notice.textContent = '';
+      settings.hidden = false;
+      controls.hidden = true;
+      tableBar.hidden = true;
+      summary.hidden = true;
+      calls.hidden = true;
+      hideStats();
+      detail.replaceChildren();
+      settingsPasswordMessage.textContent = '';
+      const response = await fetch('/api/settings');
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        notice.textContent = payload.error || 'Settings are unavailable';
+        return;
+      }
+      settingsUsername.textContent = payload.username || '';
+      settingsUrl.textContent = payload.tracesUrl || '';
+      settingsToken.textContent = payload.token ? 'Authorization: Bearer ' + payload.token : '';
+      settingsPassword.hidden = !payload.canChangePassword;
     };
 
     const showAgents = () => {
@@ -1068,6 +1157,7 @@ export const logPage = (): string => `<!DOCTYPE html>
       arrangeFilters('agent-calls');
       title.textContent = 'Agent execution';
       notice.textContent = execution.traceId;
+      showLogChrome();
       summary.hidden = true;
       calls.hidden = false;
       detail.replaceChildren();
@@ -1566,6 +1656,20 @@ export const logPage = (): string => `<!DOCTYPE html>
 
     navPipelines.addEventListener('click', showPipelines);
     navAgents.addEventListener('click', showAgents);
+    navSettings.addEventListener('click', showSettings);
+    settingsPassword.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      settingsPasswordMessage.textContent = '';
+      const data = new FormData(settingsPassword);
+      const response = await fetch('/api/password', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ current: data.get('current'), password: data.get('password') }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      settingsPasswordMessage.textContent = response.ok ? 'Password changed' : (payload.error || 'Could not change the password');
+      if (response.ok) settingsPassword.reset();
+    });
     filterWindow.addEventListener('change', () => { replaceFilters(); loadCatalog(); });
     filterModelButton.addEventListener('click', () => {
       filterModelMenu.hidden = !filterModelMenu.hidden;
@@ -1607,6 +1711,7 @@ export const logPage = (): string => `<!DOCTYPE html>
       if (route.page === 'pipeline') showExecutions({ name: route.name });
       else if (route.page === 'session') showExecution({ name: route.name, traceId: route.traceId });
       else if (route.page === 'agents') showAgents();
+      else if (route.page === 'settings') showSettings();
       else if (route.page === 'agent') showAgent({ name: route.name, pipelineName: route.pipelineName });
       else if (route.page === 'agent-execution') showAgentExecution({ name: route.name, pipelineName: route.pipelineName }, { traceId: route.traceId });
       else showPipelines();

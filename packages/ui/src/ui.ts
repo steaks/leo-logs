@@ -145,7 +145,7 @@ const denyPage = (response: ServerResponse) => {
   response.end('Unauthorized');
 };
 
-const PAGE_PATHS = new Set(['/', '/sessions', '/session', '/agents', '/executions', '/execution']);
+const PAGE_PATHS = new Set(['/', '/sessions', '/session', '/agents', '/executions', '/execution', '/settings']);
 
 const cookieValue = (request: IncomingMessage, name: string): string => {
   const header = request.headers.cookie;
@@ -201,7 +201,7 @@ const admit = async (logs: LogDb, request: IncomingMessage, response: ServerResp
       send(response, 200, gettingStartedPage(`${publicOrigin(request)}/traces`, token), 'text/html; charset=utf-8');
       return false;
     }
-    if (url.pathname === '/api/catalog' || url.pathname === '/api/rows' || url.pathname === '/api/providers') {
+    if (url.pathname.startsWith('/api/')) {
       send(response, 401, { error: 'Finish setup first' }, 'application/json; charset=utf-8');
       return false;
     }
@@ -211,7 +211,7 @@ const admit = async (logs: LogDb, request: IncomingMessage, response: ServerResp
     send(response, 200, accessPage(account ? 'login' : 'setup'), 'text/html; charset=utf-8');
     return false;
   }
-  if (url.pathname === '/api/catalog' || url.pathname === '/api/rows' || url.pathname === '/api/providers') {
+  if (url.pathname.startsWith('/api/')) {
     send(response, 401, { error: account ? 'Sign in required' : 'Create the login first' }, 'application/json; charset=utf-8');
     return false;
   }
@@ -305,6 +305,40 @@ const handle = async (
   } else if (logs && !await admit(logs, request, response, url, method)) {
     return;
   }
+  if (url.pathname === '/api/settings' && method === 'GET') {
+    send(response, 200, {
+      username: logs?.username() ?? login?.user ?? null,
+      token: logs?.webhookToken() || token || null,
+      tracesUrl: `${publicOrigin(request)}/traces`,
+      canChangePassword: Boolean(logs?.hasAccount()),
+    }, 'application/json; charset=utf-8');
+    return;
+  }
+  if (url.pathname === '/api/password' && method === 'POST') {
+    if (!logs?.hasAccount()) {
+      send(response, 400, { error: 'This login cannot be changed here' }, 'application/json; charset=utf-8');
+      return;
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(await readBody(request)) as unknown;
+    } catch {
+      send(response, 400, { error: 'Expected the current password and a new password' }, 'application/json; charset=utf-8');
+      return;
+    }
+    const current = body && typeof body === 'object' ? (body as { current?: unknown }).current : null;
+    const next = body && typeof body === 'object' ? (body as { password?: unknown }).password : null;
+    if (typeof current !== 'string' || typeof next !== 'string' || next.length < 8) {
+      send(response, 400, { error: 'Password must be at least 8 characters' }, 'application/json; charset=utf-8');
+      return;
+    }
+    if (!logs.changePassword(current, next)) {
+      send(response, 401, { error: 'Wrong password' }, 'application/json; charset=utf-8');
+      return;
+    }
+    send(response, 200, { ok: true }, 'application/json; charset=utf-8');
+    return;
+  }
   if (url.pathname === '/api/providers') {
     if (method !== 'GET') {
       send(response, 405, { error: 'Method not allowed' }, 'application/json; charset=utf-8');
@@ -322,7 +356,7 @@ const handle = async (
     send(response, 405, { error: 'Method not allowed' }, 'application/json; charset=utf-8');
     return;
   }
-  if (url.pathname === '/' || url.pathname === '/sessions' || url.pathname === '/session' || url.pathname === '/agents' || url.pathname === '/executions' || url.pathname === '/execution') {
+  if (PAGE_PATHS.has(url.pathname)) {
     send(response, 200, logPage(), 'text/html; charset=utf-8');
     return;
   }
