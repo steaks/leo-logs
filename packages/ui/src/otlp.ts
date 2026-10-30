@@ -101,6 +101,23 @@ const traceIdOf = (spanTraceId: string, attrs: Map<string, unknown>): string => 
   return candidates.find((id) => parseTraceId(id)) ?? spanTraceId;
 };
 
+/** The id sent as `trace.trace_id`. BigQuery stores it as `trace_id`. The webhook leaves it on the completion's `rawRequest`. */
+export const requestTraceId = (value: unknown): string | null => {
+  const record = value && typeof value === 'object' ? value as { messages?: unknown } : null;
+  const messages = Array.isArray(record?.messages) ? record.messages : [];
+  for (const message of messages) {
+    if (!message || typeof message !== 'object') continue;
+    const raw = (message as { rawRequest?: unknown }).rawRequest;
+    if (!raw || typeof raw !== 'object') continue;
+    const trace = (raw as { trace?: unknown }).trace;
+    if (!trace || typeof trace !== 'object') continue;
+    const ids = trace as { trace_id?: unknown; traceId?: unknown };
+    const id = typeof ids.trace_id === 'string' ? ids.trace_id : typeof ids.traceId === 'string' ? ids.traceId : null;
+    if (id && parseTraceId(id)) return id;
+  }
+  return null;
+};
+
 const hasUsage = (attrs: Map<string, unknown>): boolean =>
   ['gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.prompt', 'gen_ai.completion', 'gen_ai.input.messages', 'gen_ai.output.messages']
     .some((key) => attrs.has(key));
@@ -131,7 +148,7 @@ const spanOf = (span: Record<string, unknown>): LogSpan | null => {
     metadata[key] = value;
   }
   return {
-    traceId: traceIdOf(rawId, attrs),
+    traceId: requestTraceId(output) ?? requestTraceId(input) ?? traceIdOf(rawId, attrs),
     spanId,
     parentSpanId: typeof span.parentSpanId === 'string' && span.parentSpanId ? span.parentSpanId : null,
     userId: text(attrs, 'user.id'),

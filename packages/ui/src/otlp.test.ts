@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { createPipeline } from '@leo-logs/trace';
+import { createAgent, createPipeline } from '@leo-logs/trace';
 import { spansFromOtlp } from './otlp';
 
 const nano = (ms: number) => String(BigInt(ms) * 1_000_000n);
@@ -68,6 +68,42 @@ describe('otlp webhook', () => {
     assert.equal(span?.timestamp, '2026-10-30T18:00:00.000Z');
     assert.deepEqual(span?.input, { messages: [{ role: 'user', content: 'hello' }] });
     assert.deepEqual(span?.output, { messages: [{ role: 'assistant', content: 'hi' }] });
+  });
+
+  it('uses the trace id OpenRouter left on the completion', () => {
+    const pipeline = createPipeline('order-desk');
+    const agent = createAgent('lookup', pipeline);
+    const start = Date.parse('2026-10-30T18:00:00.000Z');
+    const spans = spansFromOtlp({
+      resourceSpans: [{
+        scopeSpans: [{
+          spans: [{
+            traceId: 'a92bb4badcd55b9be82596e87eb3ad3d',
+            spanId: 'generation',
+            startTimeUnixNano: nano(start),
+            endTimeUnixNano: nano(start + 40),
+            attributes: [
+              { key: 'gen_ai.request.model', value: { stringValue: 'z-ai/glm-5.3-flash' } },
+              { key: 'gen_ai.usage.input_tokens', value: { intValue: '251' } },
+              { key: 'gen_ai.usage.output_tokens', value: { intValue: '38' } },
+              { key: 'session.id', value: { stringValue: pipeline.sessionId() } },
+              {
+                key: 'gen_ai.completion',
+                value: {
+                  stringValue: JSON.stringify({
+                    messages: [{
+                      rawRequest: { trace: { trace_id: agent.traceId() }, session_id: pipeline.sessionId() },
+                    }],
+                  }),
+                },
+              },
+            ],
+          }],
+        }],
+      }],
+    });
+    assert.equal(spans[0]?.traceId, agent.traceId());
+    assert.equal(spans[0]?.sessionId, pipeline.sessionId());
   });
 
   it('returns nothing for an empty test payload', () => {

@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { agentOverviews, groupTraces, pipelineOverviews, type AgentOverview, type AgentSummary, type PipelineOverview, type PipelineSummary, type TraceSummary } from './group';
+import { requestTraceId } from './otlp';
 import { TRACE_ROW_LIMIT, TRACE_WINDOWS, traceQuery, windowStart, type TraceQuery } from './query';
 
 export const DEFAULT_LOG_FILE = '.leo-logs/logs.db';
@@ -98,7 +99,7 @@ const text = (value: unknown): string | null => (typeof value === 'string' ? val
 const numberOf = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
 
 const rowOf = (row: Record<string, unknown>): LogSpan => ({
-  traceId: text(row.trace_id) ?? '',
+  traceId: requestTraceId(jsonOf(row.output)) ?? requestTraceId(jsonOf(row.input)) ?? text(row.trace_id) ?? '',
   spanId: text(row.span_id) ?? '',
   parentSpanId: text(row.parent_span_id),
   userId: text(row.user_id),
@@ -255,8 +256,22 @@ export const openLogs = (env: NodeJS.ProcessEnv): LogDb => {
       metadata = excluded.metadata
   `);
   const prune = db.prepare('DELETE FROM spans WHERE timestamp IS NOT NULL AND timestamp < ?');
+  const adopt = db.prepare('UPDATE spans SET trace_id = ? WHERE trace_id = ? AND span_id = ?');
+  const misplaced = db.prepare(`
+    SELECT trace_id, span_id, input, output FROM spans
+    WHERE instr(trace_id, 'pipeline:') = 0 AND instr(trace_id, 'agent:') = 0
+  `);
   const forget = () => {
     prune.run(windowStart(TRACE_WINDOWS.month));
+  };
+  const repair = () => {
+    const pending = misplaced.all() as Record<string, unknown>[];
+    for (const row of pending) {
+      const stored = text(row.trace_id) ?? '';
+      const next = requestTraceId(jsonOf(row.output)) ?? requestTraceId(jsonOf(row.input));
+      if (!next || next === stored || !text(row.span_id)) continue;
+      adopt.run(next, stored, text(row.span_id));
+    }
   };
   const selectWindow = (query: TraceQuery): LogSpan[] => {
     const models = query.models;
@@ -274,6 +289,7 @@ export const openLogs = (env: NodeJS.ProcessEnv): LogDb => {
     source: {
       catalog: async (input) => {
         forget();
+        repair();
         const query = input ?? traceQuery({});
         const spans = selectWindow(query);
         const models = db.prepare(`
@@ -293,6 +309,7 @@ export const openLogs = (env: NodeJS.ProcessEnv): LogDb => {
         };
       },
       rows: async (scope, traceId, input) => {
+        repair();
         const query = input ?? traceQuery({});
         const models = query.models;
         const match = scope === 'agent'

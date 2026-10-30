@@ -68,4 +68,28 @@ describe('sqlite log', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('stores the agent id OpenRouter left on the completion', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'leo-logs-'));
+    const logs = openLogs({ LEO_LOGS_DB: join(dir, 'logs.db') });
+    try {
+      const pipeline = createPipeline('order-desk');
+      const agent = createAgent('lookup', pipeline);
+      logs.insert([
+        span('a92bb4badcd55b9be82596e87eb3ad3d', 'call', {
+          sessionId: pipeline.sessionId(),
+          output: { messages: [{ rawRequest: { trace: { trace_id: agent.traceId() } } }] },
+        }),
+      ]);
+      const catalog = await logs.source.catalog();
+      assert.equal(catalog.pipelines[0]?.agents[0]?.name, 'lookup');
+      assert.equal(catalog.pipelines[0]?.agents[0]?.traceId, agent.traceId());
+      const agentRows = await logs.source.rows('agent', agent.traceId());
+      assert.equal(agentRows.length, 1);
+      assert.equal(agentRows[0]?.traceId, agent.traceId());
+    } finally {
+      logs.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
