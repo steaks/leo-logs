@@ -7,6 +7,7 @@ export interface Pipeline {
   id: string;
   name: string;
   sessionId: () => string;
+  agent: (name: string) => Agent;
 }
 
 export interface Agent {
@@ -14,6 +15,8 @@ export interface Agent {
   name: string;
   pipeline?: Pipeline;
   traceId: () => string;
+  /** The pipeline session when this agent belongs to one. */
+  sessionId: () => string | null;
 }
 
 export interface ParsedPipeline {
@@ -45,7 +48,13 @@ export const createPipeline = (name: string): Pipeline => {
   const id = crypto.randomUUID();
   const sessionId = `pipeline:${pipelineName}-execution:${id}`;
   if (!parseTraceId(sessionId)) throw new Error('Pipeline name cannot be used in a trace id');
-  return { id, name: pipelineName, sessionId: () => sessionId };
+  const pipeline: Pipeline = {
+    id,
+    name: pipelineName,
+    sessionId: () => sessionId,
+    agent: (agentName) => createAgent(agentName, pipeline),
+  };
+  return pipeline;
 };
 
 /** An agent trace id is `agent:{name}-execution:{uuid}`, prefixed with the pipeline id when one is passed. */
@@ -60,6 +69,7 @@ export const createAgent = (name: string, pipeline?: Pipeline): Agent => {
     name: agentName,
     ...(pipeline ? { pipeline } : {}),
     traceId: () => traceId,
+    sessionId: () => pipeline ? pipeline.sessionId() : null,
   };
 };
 

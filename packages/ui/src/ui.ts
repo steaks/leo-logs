@@ -4,7 +4,7 @@ import { parseTraceId } from '@leo-logs/trace';
 import { spansFromOtlp } from './otlp';
 import { openRouterProviders } from './openrouter';
 import { traceQuery, type TraceQuery } from './query';
-import { accessPage, gettingStartedPage } from './access-page';
+import { accessPage, gettingStartedPage, gettingStartedPaths } from './access-page';
 import { openLogs, type LogDb, type LogRow, type LogSource } from './sqlite';
 import { logPage } from './ui-page';
 
@@ -25,6 +25,18 @@ const send = (response: ServerResponse, status: number, body: unknown, type: str
   const payload = typeof body === 'string' ? body : JSON.stringify(body);
   response.writeHead(status, { 'content-type': type, 'cache-control': 'no-store' });
   response.end(payload);
+};
+
+const redirect = (response: ServerResponse, location: string) => {
+  response.writeHead(302, { location, 'cache-control': 'no-store' });
+  response.end();
+};
+
+const gettingStartedStep = (pathname: string): keyof typeof gettingStartedPaths | null => {
+  for (const [step, path] of Object.entries(gettingStartedPaths)) {
+    if (path === pathname) return step as keyof typeof gettingStartedPaths;
+  }
+  return null;
 };
 
 const scopeOf = (value: string | null): 'pipeline' | 'agent' | null =>
@@ -194,16 +206,28 @@ const admit = async (logs: LogDb, request: IncomingMessage, response: ServerResp
   if ((url.pathname === '/setup' || url.pathname === '/login') && method === 'POST') {
     return saveLogin(logs, request, response, url.pathname === '/setup', account);
   }
+  const step = gettingStartedStep(url.pathname);
+  const page = PAGE_PATHS.has(url.pathname);
   if (logs.validSession(cookieValue(request, 'leo_logs'))) {
-    if (logs.setupReady()) return true;
+    if (logs.setupReady()) {
+      if (step && method === 'GET') {
+        redirect(response, '/');
+        return false;
+      }
+      return true;
+    }
     if (url.pathname === '/ready' && method === 'POST') {
       logs.finishSetup();
       send(response, 200, { ok: true }, 'application/json; charset=utf-8');
       return false;
     }
-    if (PAGE_PATHS.has(url.pathname) && method === 'GET') {
+    if (method === 'GET' && (step === 'openrouter' || step === 'code')) {
       const token = logs.webhookToken() ?? '';
-      send(response, 200, gettingStartedPage(`${publicOrigin(request)}/traces`, token), 'text/html; charset=utf-8');
+      send(response, 200, gettingStartedPage(step, `${publicOrigin(request)}/traces`, token), 'text/html; charset=utf-8');
+      return false;
+    }
+    if (method === 'GET' && (page || step === 'account')) {
+      redirect(response, gettingStartedPaths.openrouter);
       return false;
     }
     if (url.pathname.startsWith('/api/')) {
@@ -212,8 +236,20 @@ const admit = async (logs: LogDb, request: IncomingMessage, response: ServerResp
     }
     return true;
   }
-  if (PAGE_PATHS.has(url.pathname) && method === 'GET') {
-    send(response, 200, accessPage(account ? 'login' : 'setup'), 'text/html; charset=utf-8');
+  if (method === 'GET' && step === 'account' && !account) {
+    send(response, 200, accessPage('setup'), 'text/html; charset=utf-8');
+    return false;
+  }
+  if (method === 'GET' && !account && (page || step)) {
+    redirect(response, gettingStartedPaths.account);
+    return false;
+  }
+  if (method === 'GET' && account && step) {
+    redirect(response, '/');
+    return false;
+  }
+  if (page && method === 'GET') {
+    send(response, 200, accessPage('login'), 'text/html; charset=utf-8');
     return false;
   }
   if (url.pathname.startsWith('/api/')) {
@@ -343,8 +379,13 @@ const handle = async (
     }
     const current = body && typeof body === 'object' ? (body as { current?: unknown }).current : null;
     const next = body && typeof body === 'object' ? (body as { password?: unknown }).password : null;
+    const confirm = body && typeof body === 'object' ? (body as { confirm?: unknown }).confirm : null;
     if (typeof current !== 'string' || typeof next !== 'string' || next.length < 8) {
       send(response, 400, { error: 'Password must be at least 8 characters' }, 'application/json; charset=utf-8');
+      return;
+    }
+    if (typeof confirm !== 'string' || confirm !== next) {
+      send(response, 400, { error: 'Passwords do not match' }, 'application/json; charset=utf-8');
       return;
     }
     if (!logs.changePassword(current, next)) {

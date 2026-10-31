@@ -20,7 +20,13 @@ const createPipeline = (name) => {
     const sessionId = `pipeline:${pipelineName}-execution:${id}`;
     if (!(0, exports.parseTraceId)(sessionId))
         throw new Error('Pipeline name cannot be used in a trace id');
-    return { id, name: pipelineName, sessionId: () => sessionId };
+    const pipeline = {
+        id,
+        name: pipelineName,
+        sessionId: () => sessionId,
+        agent: (agentName) => (0, exports.createAgent)(agentName, pipeline),
+    };
+    return pipeline;
 };
 exports.createPipeline = createPipeline;
 /** An agent trace id is `agent:{name}-execution:{uuid}`, prefixed with the pipeline id when one is passed. */
@@ -36,6 +42,7 @@ const createAgent = (name, pipeline) => {
         name: agentName,
         ...(pipeline ? { pipeline } : {}),
         traceId: () => traceId,
+        sessionId: () => pipeline ? pipeline.sessionId() : null,
     };
 };
 exports.createAgent = createAgent;

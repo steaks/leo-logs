@@ -1,7 +1,7 @@
 import { OpenRouter as AgentClient, serverTool, tool, type ConversationState, type StateAccessor } from '@openrouter/agent';
 import { OpenRouter } from '@openrouter/sdk';
 import { z } from 'zod';
-import { createAgent, createPipeline, type Agent } from '@leo-logs/trace';
+import { createPipeline, type Agent } from '@leo-logs/trace';
 
 const flash = 'z-ai/glm-5.3-flash';
 const writer = 'z-ai/glm-5.3';
@@ -65,10 +65,10 @@ const runAgent = async (
   functionTool: FunctionTool,
   server: ServerTool,
 ) => {
-  if (!agent.pipeline) throw new Error(`${agent.name} has no pipeline`);
+  const sessionId = agent.sessionId();
+  if (!sessionId) throw new Error(`${agent.name} has no pipeline`);
   const client = new AgentClient({ apiKey });
   const trace = { traceId: agent.traceId() };
-  const sessionId = agent.pipeline.sessionId();
   const state = memory();
   const found = client.callModel({
     model,
@@ -115,10 +115,10 @@ const toneFor = (customer: string) => ({
 
 /** The email chat. reply_tone runs here, then the same messages continue so the model can write. */
 const runChat = async (apiKey: string, agent: Agent, model: string, task: string) => {
-  if (!agent.pipeline) throw new Error(`${agent.name} has no pipeline`);
+  const sessionId = agent.sessionId();
+  if (!sessionId) throw new Error(`${agent.name} has no pipeline`);
   const client = new OpenRouter({ apiKey });
   const trace = { traceId: agent.traceId() };
-  const sessionId = agent.pipeline.sessionId();
   type ChatRequest = NonNullable<Parameters<OpenRouter['chat']['send']>[0]['chatRequest']>;
   const messages: ChatRequest['messages'] = [{ role: 'user', content: task }];
   for (let turn = 0; turn < 3; turn += 1) {
@@ -152,9 +152,9 @@ const runChat = async (apiKey: string, agent: Agent, model: string, task: string
 
 const run = async () => {
   const pipeline = createPipeline('order-desk');
-  const lookup = createAgent('lookup', pipeline);
-  const policy = createAgent('policy', pipeline);
-  const reply = createAgent('reply', pipeline);
+  const lookup = pipeline.agent('lookup');
+  const policy = pipeline.agent('policy');
+  const reply = pipeline.agent('reply');
   const apiKey = process.env.OPENROUTER_API_KEY ?? '';
   const order = await runAgent(
     apiKey,

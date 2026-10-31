@@ -11,6 +11,15 @@ describe('trace ids', () => {
     assert.equal(parseTraceId(pipeline.sessionId())?.id, pipeline.id);
   });
 
+  it('creates an agent from the pipeline', () => {
+    const pipeline = createPipeline('my-pipeline');
+    const agent = pipeline.agent('simple');
+    assert.equal(agent.pipeline, pipeline);
+    assert.equal(agent.traceId(), `${pipeline.sessionId()}_agent:simple-execution:${agent.id}`);
+    assert.equal(agent.traceId(), agent.traceId());
+    assert.equal(agent.sessionId(), pipeline.sessionId());
+  });
+
   it('prefixes an agent with its pipeline', () => {
     const pipeline = createPipeline('my-pipeline');
     const agent = createAgent('simple', pipeline);
@@ -29,6 +38,7 @@ describe('trace ids', () => {
     assert.equal(parsed?.kind, 'agent');
     if (parsed?.kind !== 'agent') return;
     assert.equal(parsed.pipeline, null);
+    assert.equal(agent.sessionId(), null);
   });
 
   it('rejects an empty name and the agent separator', () => {

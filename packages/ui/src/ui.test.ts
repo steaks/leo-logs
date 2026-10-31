@@ -258,6 +258,7 @@ describe('log ui', () => {
     try {
       const first = await fetch(`${ui.url}/`);
       assert.equal(first.status, 200);
+      assert.equal(new URL(first.url).pathname, '/getting-started/account');
       const setupHtml = await first.text();
       assert.match(setupHtml, /Getting started/);
       assert.match(setupHtml, /Create your account/);
@@ -297,9 +298,19 @@ describe('log ui', () => {
       assert.equal(login.status, 200);
       const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
       const page = await fetch(`${ui.url}/`, { headers: { cookie } });
+      assert.equal(new URL(page.url).pathname, '/getting-started/openrouter');
       const html = await page.text();
       assert.match(html, /Connect OpenRouter/);
+      assert.match(html, /href="\/getting-started\/code"/);
       assert.match(html, /\/traces/);
+      const code = await fetch(`${ui.url}/getting-started/code`, { headers: { cookie } });
+      assert.equal(new URL(code.url).pathname, '/getting-started/code');
+      const codeHtml = await code.text();
+      assert.match(codeHtml, /Integrate the Code/);
+      assert.match(codeHtml, /class="fn">createPipeline</);
+      assert.match(codeHtml, /class="fn">agent</);
+      assert.match(codeHtml, /class="fn">traceId</);
+      assert.match(codeHtml, /class="fn">sessionId</);
       const token = /data-token="([^"]+)"/.exec(html)?.[1] ?? '';
       assert.equal(token.length, 64);
       const posted = await fetch(`${ui.url}/traces`, {
@@ -313,6 +324,12 @@ describe('log ui', () => {
       const logsHtml = await logs.text();
       assert.match(logsHtml, /Pipelines/);
       assert.match(logsHtml, /id="nav-settings"/);
+      assert.match(logsHtml, /Setup instructions/);
+      assert.match(logsHtml, /Integrate the code/);
+      assert.match(logsHtml, /class="fn">createPipeline</);
+      assert.match(logsHtml, /support-reply/);
+      assert.match(logsHtml, /Enable Broadcast/);
+      assert.match(logsHtml, /name="confirm"/);
       const settingsPage = await fetch(`${ui.url}/settings`, { headers: { cookie } });
       assert.equal(settingsPage.status, 200);
       const settings = await fetch(`${ui.url}/api/settings`, { headers: { cookie } });
@@ -322,10 +339,16 @@ describe('log ui', () => {
       assert.equal(saved.token, token);
       assert.match(saved.tracesUrl, /\/traces$/);
       assert.equal(saved.canChangePassword, true);
+      const mismatch = await fetch(`${ui.url}/api/password`, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ current: 'password1', password: 'password2', confirm: 'password3' }),
+      });
+      assert.equal(mismatch.status, 400);
       const changed = await fetch(`${ui.url}/api/password`, {
         method: 'POST',
         headers: { cookie, 'content-type': 'application/json' },
-        body: JSON.stringify({ current: 'password1', password: 'password2' }),
+        body: JSON.stringify({ current: 'password1', password: 'password2', confirm: 'password2' }),
       });
       assert.equal(changed.status, 200);
       assert.match(logsHtml, /id="settings-logout"/);

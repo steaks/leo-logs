@@ -8,7 +8,7 @@ OpenRouter logs for pipelines and agents.
 
 Requires Node `>=24 <25`.
 
-The docs site is VitePress. `npm run docs` serves it, and `npm run docs:build` writes `docs/.vitepress/dist`. The guide is Pipelines, Agents, and Run.
+The docs site is VitePress. `npm run docs` serves it, and `npm run docs:build` writes `docs/.vitepress/dist`. The guide is Getting started, Integrate, @leo-logs/trace, Pipelines, Agents, The log page, and Run.
 
 ```bash
 npm install
@@ -18,17 +18,17 @@ npm run build
 
 ## Trace ids
 
-`createPipeline().sessionId()` returns `pipeline:{name}-execution:{uuid}`. `createAgent().traceId()` returns `agent:{name}-execution:{uuid}`. Pass a pipeline and the agent id is `{pipeline session id}_agent:{name}-execution:{uuid}`. Each uuid is chosen once, so both ids stay the same.
+`createPipeline().sessionId()` returns `pipeline:{name}-execution:{uuid}`. `pipeline.agent(name).traceId()` returns `{pipeline session id}_agent:{name}-execution:{uuid}`. `agent.sessionId()` returns that pipeline session, or null when the agent has no pipeline. `createAgent().traceId()` returns `agent:{name}-execution:{uuid}` when the agent has no pipeline. Each uuid is chosen once, so the ids stay the same.
 
 Put that string on the OpenRouter request as `trace.traceId`.
 
 ```typescript
 import { OpenRouter as AgentClient } from '@openrouter/agent';
 import { OpenRouter } from '@openrouter/sdk';
-import { createAgent, createPipeline } from '@leo-logs/trace';
+import { createPipeline } from '@leo-logs/trace';
 
 const pipeline = createPipeline('my-pipeline');
-const agent = createAgent('simple', pipeline);
+const agent = pipeline.agent('simple');
 
 const agentClient = new AgentClient({ apiKey });
 agentClient.callModel({

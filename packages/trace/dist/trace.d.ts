@@ -2,12 +2,15 @@ export interface Pipeline {
     id: string;
     name: string;
     sessionId: () => string;
+    agent: (name: string) => Agent;
 }
 export interface Agent {
     id: string;
     name: string;
     pipeline?: Pipeline;
     traceId: () => string;
+    /** The pipeline session when this agent belongs to one. */
+    sessionId: () => string | null;
 }
 export interface ParsedPipeline {
     name: string;

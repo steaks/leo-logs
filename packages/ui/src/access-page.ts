@@ -4,17 +4,113 @@ const escapeHtml = (value: string): string => value
   .replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;');
 
+const highlight = (source: string): string => {
+  const pattern = /\/\/.*|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|\b(?:import|from|const|await|new|return)\b|[A-Za-z_$][\w$]*(?=\s*[(:])/g;
+  let html = '';
+  let last = 0;
+  for (const match of source.matchAll(pattern)) {
+    const index = match.index ?? 0;
+    html += escapeHtml(source.slice(last, index));
+    const text = match[0];
+    const next = source[index + text.length];
+    const kind = text.startsWith('//')
+      ? 'cm'
+      : text.startsWith("'") || text.startsWith('"') || text.startsWith('`')
+      ? 'str'
+      : next === '('
+        ? 'fn'
+        : next === ':'
+          ? 'prop'
+          : 'kw';
+    html += `<span class="${kind}">${escapeHtml(text)}</span>`;
+    last = index + text.length;
+  }
+  return html + escapeHtml(source.slice(last));
+};
+
+const highlightShell = (source: string): string => {
+  const parts = source.split(' ');
+  const [command, ...rest] = parts;
+  if (!command || rest.length === 0) return escapeHtml(source);
+  const packageName = rest[rest.length - 1] ?? '';
+  const middle = rest.slice(0, -1);
+  return `<span class="kw">${escapeHtml(command)}</span> ${middle.map(escapeHtml).join(' ')} <span class="str">${escapeHtml(packageName)}</span>`;
+};
+
+const broadcastGuide = `<a class="guide" href="https://openrouter.ai/docs/guides/features/broadcast" target="_blank" rel="noopener noreferrer">OpenRouter’s Broadcast guide</a>`;
+
+/** The OpenRouter webhook steps. Settings shows the same list after setup is finished. */
+export const openRouterSetup = (urlMarkup: string, headerMarkup: string): string => `<ol>
+      <li>Open <a href="https://openrouter.ai/settings/observability" target="_blank" rel="noopener noreferrer">Settings → Observability</a>.</li>
+      <li>Toggle the <strong>Enable Broadcast</strong> switch to turn on the feature.</li>
+      <li>Scroll down to configure a webhook destination. Click <strong>Set Up</strong>.</li>
+      <li>Set the URL to ${urlMarkup}</li>
+      <li>Set the headers to ${headerMarkup}</li>
+      <li>Scroll to <strong>Additional generation metadata</strong>. Check <strong>Cost</strong>, <strong>Identity</strong>, <strong>Request context</strong>, and <strong>Cost allocation</strong>.</li>
+      <li>Click the <strong>Add</strong> button at the top right of the screen.</li>
+    </ol>`;
+
+/** The same Broadcast guide link, placed at the top right of setup. */
+export const broadcastGuideLink = broadcastGuide;
+
+const integrateExample = `import { OpenRouter } from '@openrouter/sdk';
+import { createPipeline } from '@leo-logs/trace';
+
+// Group of agents orchestrated to complete a task.
+const pipeline = createPipeline('support-reply');
+// One agent in the pipeline with a specific responsibility.
+const agent = pipeline.agent('answer');
+
+const client = new OpenRouter({ apiKey });
+await client.chat.send({
+  chatRequest: {
+    model: 'z-ai/glm-5.3',
+    messages: [{ role: 'user', content: 'My package never arrived. Can you help?' }],
+    sessionId: agent.sessionId(),
+    trace: { traceId: agent.traceId() },
+  },
+});`;
+
+/** The install command and example. Settings shows the same sample after setup is finished. */
+export const integrateCode = (): string => `<p class="lede">Install <code>@leo-logs/trace</code>. A pipeline is a group of agents orchestrated to complete a task. An agent is one of them, with a specific responsibility.</p>
+<pre class="code install">${highlightShell('npm install @leo-logs/trace')}</pre>
+<pre class="code example">${highlight(integrateExample)}</pre>`;
+
+/** Each getting-started step is its own page. */
+export const gettingStartedPaths = {
+  account: '/getting-started/account',
+  openrouter: '/getting-started/openrouter',
+  code: '/getting-started/code',
+} as const;
+
+const stepLinks = (current: keyof typeof gettingStartedPaths): string => {
+  const items = [
+    ['account', gettingStartedPaths.account, '1 · Account'],
+    ['openrouter', gettingStartedPaths.openrouter, '2 · Connect to OpenRouter'],
+    ['code', gettingStartedPaths.code, '3 · Integrate the Code'],
+  ] as const;
+  const order = { account: 0, openrouter: 1, code: 2 };
+  return items.map(([id, href, label]) => {
+    const state = id === current ? 'current' : order[id] < order[current] ? 'done' : '';
+    return `<a class="${state}" href="${href}">${label}</a>`;
+  }).join('\n      ');
+};
+
 /** Shown once after the login is created. The token is the bearer OpenRouter sends to POST /traces. */
-export const gettingStartedPage = (tracesUrl: string, token: string): string => {
+export const gettingStartedPage = (step: 'openrouter' | 'code', tracesUrl: string, token: string): string => {
   const url = escapeHtml(tracesUrl);
   const secret = escapeHtml(token);
   const header = escapeHtml(JSON.stringify({ Authorization: `Bearer ${token}` }));
+  const steps = openRouterSetup(
+    `<code class="url" data-traces-url="${url}">${url}</code>`,
+    `<pre data-token="${secret}">${header}</pre>`,
+  );
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Connect OpenRouter — Leo Logs</title>
+  <title>${step === 'openrouter' ? 'Connect OpenRouter' : 'Integrate the Code'} — Leo Logs</title>
   <style>
     :root { color-scheme: dark; --bg: #0c0c0c; --ink: #ececec; --muted: #8a8a8a; --line: #2a2a2a; --card: #161616; --accent: #d6f25c; --accent-ink: #1a2208; }
     * { box-sizing: border-box; }
@@ -24,49 +120,53 @@ export const gettingStartedPage = (tracesUrl: string, token: string): string => 
     p { margin: 0 0 24px; color: var(--muted); }
     ol { display: flex; flex-direction: column; gap: 18px; margin: 0 0 28px; padding-left: 1.3em; }
     li { margin: 0; }
-    li ul { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 0; padding-left: 1.2em; }
     code, pre { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 13px; }
     code.url { display: block; margin-top: 10px; padding: 12px 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); word-break: break-all; }
     pre { margin: 12px 0 0; padding: 14px 16px; overflow-x: auto; white-space: nowrap; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); line-height: 1.55; }
+    pre.code { white-space: pre; }
+    pre .kw { color: #d6f25c; }
+    pre .str { color: #ffb86b; }
+    pre .fn { color: #c5d0ff; }
+    pre .prop { color: #8fd3ff; }
+    pre .cm { color: var(--muted); }
+    pre.install { margin: 0 0 16px; }
+    pre.example { margin: 0 0 28px; }
+    [hidden] { display: none !important; }
     button { height: 42px; width: 100%; border: 0; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 650; cursor: pointer; }
     button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    .kicker { margin: 0 0 12px; color: var(--accent); font-size: 12px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; }
-    .steps { display: flex; gap: 8px; width: fit-content; max-width: 100%; margin: 0 0 28px; }
-    .steps span { flex: none; padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--muted); font-size: 12px; font-weight: 650; }
+    .kicker { margin: 0; color: var(--accent); font-size: 12px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; }
+    .page-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 12px; }
+    a.guide { flex: none; color: var(--ink); font-size: 13px; text-decoration: none; }
+    a.guide:hover { text-decoration: underline; }
+    .steps { display: flex; flex-wrap: wrap; gap: 8px; width: fit-content; max-width: 100%; margin: 0 0 28px; }
+    .steps a { flex: none; padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--muted); font-size: 12px; font-weight: 650; text-decoration: none; }
     .steps .current { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
     .steps .done { color: var(--ink); }
+    a.continue { display: flex; align-items: center; justify-content: center; height: 42px; width: 100%; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-weight: 650; text-decoration: none; }
   </style>
 </head>
 <body>
   <main>
-    <p class="kicker">Getting started</p>
-    <div class="steps" aria-label="Getting started">
-      <span class="done">1 · Account</span>
-      <span class="current">2 · OpenRouter</span>
+    <div class="page-top">
+      <p class="kicker">Getting started</p>
+      ${broadcastGuide}
     </div>
-    <h1>Connect OpenRouter</h1>
-    <p>This access token was created for this log file. Paste it into the webhook destination. It is shown only on this screen.</p>
-    <ol>
-      <li>Open <a href="https://openrouter.ai/settings/observability">Settings → Observability</a> and turn on <strong>Enable Broadcast</strong>.</li>
-      <li>Edit <strong>Webhook</strong>. Set the method to <code>POST</code> and the URL to <code class="url" data-traces-url="${url}">${url}</code></li>
-      <li>Set the headers to <pre data-token="${secret}">${header}</pre></li>
-      <li>On the destination form:
-        <ul>
-          <li>Choose <strong>Global</strong>.</li>
-          <li>Check every <strong>Additional generation metadata</strong> option: <strong>Cost</strong>, <strong>Identity</strong>, <strong>Request context</strong>, and <strong>Cost allocation</strong>.</li>
-          <li>Leave <strong>Privacy Mode</strong> off so prompts and completions are stored.</li>
-        </ul>
-      </li>
-      <li>Click <strong>Test Connection</strong>, then save.</li>
-    </ol>
-    <button type="button">Go to logs</button>
-  </main>
+    <div class="steps" aria-label="Getting started">
+      ${stepLinks(step)}
+    </div>
+    ${step === 'openrouter' ? `<h1>Connect OpenRouter</h1>
+    <p>This access token was created for this log file. Paste it into the webhook destination. Settings keeps a copy of these steps.</p>
+    ${steps}
+    <a class="continue" href="${gettingStartedPaths.code}">Continue</a>` : `    <h1>Integrate the Code</h1>
+    ${integrateCode()}
+    <button id="ready" type="button">Go to logs</button>
   <script>
-    document.querySelector('button').addEventListener('click', async () => {
+    document.getElementById('ready').addEventListener('click', async () => {
       const response = await fetch('/ready', { method: 'POST' });
       if (response.ok) location.assign('/');
     });
-  </script>
+  </script>`}
+  </main>
 </body>
 </html>`;
 };
@@ -140,9 +240,10 @@ const setupPage = (): string => `<!DOCTYPE html>
     h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: -0.03em; }
     .kicker { margin: 0 0 8px; color: var(--accent); font-size: 12px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; }
     .lede { margin: 0 0 18px; color: var(--muted); }
-    .steps { display: flex; gap: 8px; margin: 0 0 22px; }
-    .steps span { flex: 1; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--muted); font-size: 12px; font-weight: 650; }
+    .steps { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 22px; }
+    .steps a { flex: none; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--muted); font-size: 12px; font-weight: 650; text-decoration: none; }
     .steps .current { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+    .steps .done { color: var(--ink); }
     label { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
     label .row { display: flex; justify-content: space-between; gap: 12px; }
     label .hint { color: var(--muted); font-size: 12px; font-weight: 450; }
@@ -156,8 +257,7 @@ const setupPage = (): string => `<!DOCTYPE html>
   <main>
     <p class="kicker">Getting started</p>
     <div class="steps" aria-label="Getting started">
-      <span class="current">1 · Account</span>
-      <span>2 · OpenRouter</span>
+      ${stepLinks('account')}
     </div>
     <h1>Create your account</h1>
     <p class="lede">This account is only for the log page on this machine. The next step connects OpenRouter so traces show up here.</p>
@@ -188,7 +288,7 @@ const setupPage = (): string => `<!DOCTYPE html>
         body: JSON.stringify({ username: data.get('username'), password }),
       });
       if (response.ok) {
-        location.assign('/');
+        location.assign('${gettingStartedPaths.openrouter}');
         return;
       }
       const body = await response.json().catch(() => ({}));

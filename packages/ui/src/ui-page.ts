@@ -1,3 +1,5 @@
+import { broadcastGuideLink, integrateCode, openRouterSetup } from './access-page';
+
 export const logPage = (): string => `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -293,6 +295,7 @@ export const logPage = (): string => `<!DOCTYPE html>
     .settings .field-label { color: var(--muted); font-size: 12px; font-weight: 550; }
     .settings .account { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.02em; }
     #settings-url,
+    .settings .setup code.url,
     .settings pre {
       margin: 0;
       padding: 12px;
@@ -354,6 +357,30 @@ export const logPage = (): string => `<!DOCTYPE html>
     .settings .warn { margin: 0; color: #ffb4b4; font-size: 13px; }
     .settings .warn.ok { color: var(--accent); }
     .settings .warn:empty { display: none; }
+    #settings-setup-toggle { align-self: flex-start; }
+    .settings .setup { display: flex; flex-direction: column; gap: 18px; }
+    .settings .setup-top { display: flex; justify-content: flex-end; }
+    .settings .setup ol { display: flex; flex-direction: column; gap: 18px; margin: 0; padding-left: 1.3em; font-size: 15px; line-height: 1.55; }
+    .settings .setup a { color: var(--link); }
+    .settings .setup .guide { margin: 0; color: var(--ink); font-size: 13px; text-decoration: none; }
+    .settings .setup .guide:hover { text-decoration: underline; }
+    .settings .setup code.url,
+    .settings .setup pre {
+      display: block;
+      margin: 12px 0 0;
+      padding: 12px 14px;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .settings .setup pre { white-space: nowrap; word-break: normal; }
+    .settings .lede code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 12px; }
+    .settings pre.code { white-space: pre; word-break: normal; }
+    .settings pre.install { margin: 0 0 12px; }
+    .settings pre .kw { color: #d6f25c; }
+    .settings pre .str { color: #ffb86b; }
+    .settings pre .fn { color: #c5d0ff; }
+    .settings pre .prop { color: #8fd3ff; }
+    .settings pre .cm { color: var(--muted); }
     @media (max-width: 800px) {
       body { flex-direction: column; }
       aside { flex: none; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -458,12 +485,22 @@ export const logPage = (): string => `<!DOCTYPE html>
           </div>
           <pre id="settings-token"></pre>
         </div>
+        <button id="settings-setup-toggle" class="secondary" type="button" aria-expanded="false" aria-controls="settings-setup">Setup instructions</button>
+        <div id="settings-setup" class="setup" hidden>
+          <div class="setup-top">${broadcastGuideLink}</div>
+          ${openRouterSetup('<code class="url" id="settings-steps-url"></code>', '<pre id="settings-steps-header"></pre>')}
+        </div>
+      </div>
+      <div class="settings-card">
+        <h2>Integrate the code</h2>
+        ${integrateCode()}
       </div>
       <form id="settings-password" class="settings-card">
         <h2>Password</h2>
         <p class="lede">At least 8 characters.</p>
         <label>Current password <input name="current" type="password" autocomplete="current-password" required></label>
         <label>New password <input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
+        <label>Confirm password <input name="confirm" type="password" autocomplete="new-password" required minlength="8"></label>
         <div class="form-actions">
           <button type="submit">Change password</button>
           <p id="settings-password-message" class="warn"></p>
@@ -527,6 +564,10 @@ export const logPage = (): string => `<!DOCTYPE html>
     const settingsPasswordMessage = document.getElementById('settings-password-message');
     const settingsCopy = document.getElementById('settings-copy');
     const settingsLogout = document.getElementById('settings-logout');
+    const settingsSetupToggle = document.getElementById('settings-setup-toggle');
+    const settingsSetup = document.getElementById('settings-setup');
+    const settingsStepsUrl = document.getElementById('settings-steps-url');
+    const settingsStepsHeader = document.getElementById('settings-steps-header');
     const filters = document.getElementById('filters');
     const filterWindow = document.getElementById('filter-window');
     const filterList = document.getElementById('filter-list');
@@ -1177,6 +1218,8 @@ export const logPage = (): string => `<!DOCTYPE html>
       settingsUsername.textContent = payload.username || '';
       settingsUrl.textContent = payload.tracesUrl || '';
       settingsToken.textContent = payload.token ? 'Authorization: Bearer ' + payload.token : '';
+      settingsStepsUrl.textContent = payload.tracesUrl || '';
+      settingsStepsHeader.textContent = payload.token ? JSON.stringify({ Authorization: 'Bearer ' + payload.token }) : '';
       settingsPassword.hidden = !payload.canChangePassword;
       settingsLogout.hidden = !payload.canChangePassword;
     };
@@ -1745,10 +1788,16 @@ export const logPage = (): string => `<!DOCTYPE html>
       settingsPasswordMessage.textContent = '';
       settingsPasswordMessage.classList.remove('ok');
       const data = new FormData(settingsPassword);
+      const password = String(data.get('password') || '');
+      const confirm = String(data.get('confirm') || '');
+      if (password !== confirm) {
+        settingsPasswordMessage.textContent = 'Passwords do not match';
+        return;
+      }
       const response = await fetch('/api/password', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ current: data.get('current'), password: data.get('password') }),
+        body: JSON.stringify({ current: data.get('current'), password, confirm }),
       });
       const payload = await response.json().catch(() => ({}));
       settingsPasswordMessage.textContent = response.ok ? 'Password changed' : (payload.error || 'Could not change the password');
@@ -1763,6 +1812,12 @@ export const logPage = (): string => `<!DOCTYPE html>
         return;
       }
       settingsLogout.disabled = false;
+    });
+    settingsSetupToggle.addEventListener('click', () => {
+      const open = settingsSetup.hidden;
+      settingsSetup.hidden = !open;
+      settingsSetupToggle.setAttribute('aria-expanded', String(open));
+      settingsSetupToggle.textContent = open ? 'Hide setup instructions' : 'Setup instructions';
     });
     settingsCopy.addEventListener('click', async () => {
       const text = settingsToken.textContent || '';
