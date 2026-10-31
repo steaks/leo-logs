@@ -1,3 +1,3 @@
-export { createAgent, createPipeline, parseTraceId } from './trace';
-export type { Agent, ParsedPipeline, ParsedTrace, Pipeline } from './trace';
+export { LOG_LEVELS, createAgent, createPipeline, parseTraceId } from './trace';
+export type { Agent, LogFields, LogLevel, LogLine, LogMethod, ParsedPipeline, ParsedTrace, Pipeline, PipelineEnd, PipelineResult } from './trace';
 //# sourceMappingURL=index.d.ts.map

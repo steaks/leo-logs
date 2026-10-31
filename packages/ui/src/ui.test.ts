@@ -252,6 +252,76 @@ describe('log ui', () => {
     }
   });
 
+  it('stores a log line posted with the bearer token', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'leo-logs-'));
+    const ui = await startLogUi({ port: 0, env: { LEO_LOGS_DB: join(dir, 'logs.db'), LEO_LOGS_TOKEN: 'secret' } });
+    try {
+      const setup = await fetch(`${ui.url}/setup`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: 'mina', password: 'password1' }),
+      });
+      const cookie = (setup.headers.get('set-cookie') ?? '').split(';')[0];
+      await fetch(`${ui.url}/ready`, { method: 'POST', headers: { cookie } });
+      const pipeline = createPipeline('support-reply');
+      const denied = await fetch(`${ui.url}/logs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      assert.equal(denied.status, 401);
+      const posted = await fetch(`${ui.url}/logs`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer secret', 'content-type': 'application/json' },
+        body: JSON.stringify({
+          level: 'info',
+          message: 'Customer asked where the package is',
+          fields: {},
+          sessionId: pipeline.sessionId(),
+          traceId: null,
+          time: '2026-10-30T18:00:00.000Z',
+        }),
+      });
+      assert.equal(posted.status, 200);
+      const batch = await fetch(`${ui.url}/logs`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer secret', 'content-type': 'application/json' },
+        body: JSON.stringify([
+          { level: 'info', message: 'Carrier answered', fields: {}, sessionId: pipeline.sessionId(), traceId: null, time: '2026-10-30T18:01:00.000Z' },
+          { level: 'error', message: 'Carrier did not answer', fields: {}, sessionId: pipeline.sessionId(), traceId: null, time: '2026-10-30T18:02:00.000Z' },
+        ]),
+      });
+      assert.equal(batch.status, 200);
+      const ended = await fetch(`${ui.url}/logs`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer secret', 'content-type': 'application/json' },
+        body: JSON.stringify({
+          level: 'error',
+          message: '{"reason":"no carrier"}',
+          fields: {},
+          sessionId: pipeline.sessionId(),
+          traceId: null,
+          time: '2026-10-30T18:03:00.000Z',
+          event: 'end',
+          success: false,
+          result: { reason: 'no carrier' },
+        }),
+      });
+      assert.equal(ended.status, 200);
+      const rows = await fetch(`${ui.url}/api/rows?scope=pipeline&traceId=${encodeURIComponent(pipeline.sessionId())}`, { headers: { cookie } });
+      const body = await rows.json() as { rows: { output: unknown; level: string; status: string; sessionId: string; metadata: { event?: string; success?: boolean; result?: { reason?: string } } }[] };
+      const outputs = body.rows.map((row) => row.output);
+      assert.ok(outputs.includes('Customer asked where the package is'));
+      assert.ok(outputs.includes('Carrier answered'));
+      assert.ok(outputs.includes('Carrier did not answer'));
+      assert.equal(body.rows.find((row) => row.output === 'Carrier did not answer')?.level, 'error');
+      const endedRow = body.rows.find((row) => row.metadata?.event === 'end');
+      assert.equal(endedRow?.status, 'error');
+      assert.equal(endedRow?.metadata.success, false);
+      assert.deepEqual(endedRow?.output, { reason: 'no carrier' });
+      assert.equal(body.rows[0]?.sessionId, pipeline.sessionId());
+    } finally {
+      await ui.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('shows setup on a new log file, then requires that login', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'leo-logs-'));
     const ui = await startLogUi({ port: 0, env: { LEO_LOGS_DB: join(dir, 'logs.db') } });

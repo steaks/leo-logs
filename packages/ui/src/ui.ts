@@ -1,11 +1,11 @@
-import { timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { parseTraceId } from '@leo-logs/trace';
 import { spansFromOtlp } from './otlp';
 import { openRouterProviders } from './openrouter';
 import { traceQuery, type TraceQuery } from './query';
 import { accessPage, gettingStartedPage, gettingStartedPaths } from './access-page';
-import { openLogs, type LogDb, type LogRow, type LogSource } from './sqlite';
+import { openLogs, type LogDb, type LogRow, type LogSource, type LogSpan } from './sqlite';
 import { logPage } from './ui-page';
 
 export interface LogUi {
@@ -120,6 +120,57 @@ const authorized = (request: IncomingMessage, tokens: string[]): boolean => {
   const header = request.headers.authorization;
   const presented = typeof header === 'string' && header.startsWith('Bearer ') ? header.slice('Bearer '.length) : '';
   return expected.some((token) => sameSecret(presented, token));
+};
+
+const LOG_LEVELS = new Set(['debug', 'info', 'warn', 'error', 'fatal']);
+
+/** A line from `pipeline.info` and the other level methods. */
+const spansFromLogs = (body: unknown): LogSpan[] => {
+  const lines = Array.isArray(body) ? body : [body];
+  const spans: LogSpan[] = [];
+  for (const line of lines) {
+    const span = spanFromLog(line);
+    if (span) spans.push(span);
+  }
+  return spans;
+};
+
+const spanFromLog = (body: unknown): LogSpan | null => {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const line = body as { level?: unknown; message?: unknown; fields?: unknown; sessionId?: unknown; traceId?: unknown; time?: unknown; event?: unknown; success?: unknown; result?: unknown };
+  if (typeof line.level !== 'string' || !LOG_LEVELS.has(line.level) || typeof line.message !== 'string') return null;
+  const sessionId = typeof line.sessionId === 'string' ? line.sessionId : null;
+  const traceId = typeof line.traceId === 'string' ? line.traceId : null;
+  const storedTrace = traceId ?? sessionId;
+  if (!storedTrace) return null;
+  const fields = line.fields && typeof line.fields === 'object' && !Array.isArray(line.fields) ? { ...line.fields } : {};
+  const event = line.event === 'start' || line.event === 'end' ? line.event : null;
+  const success = line.success === true || line.success === false ? line.success : null;
+  const metadata = { ...fields, ...(event ? { event } : {}), ...(success === null ? {} : { success }), ...(line.result !== undefined ? { result: line.result } : {}) };
+  const failed = success === false || line.level === 'error' || line.level === 'fatal';
+  return {
+    traceId: storedTrace,
+    spanId: randomUUID(),
+    parentSpanId: null,
+    userId: null,
+    sessionId,
+    timestamp: typeof line.time === 'string' ? line.time : new Date().toISOString(),
+    durationMs: null,
+    model: null,
+    providerName: null,
+    status: failed ? 'error' : 'ok',
+    level: line.level,
+    finishReason: null,
+    promptTokens: 0,
+    completionTokens: 0,
+    cachedTokens: 0,
+    totalTokens: 0,
+    totalCost: 0,
+    apiKeyName: null,
+    input: null,
+    output: event === 'end' && line.result !== undefined ? line.result : line.message,
+    metadata,
+  };
 };
 
 const publicOrigin = (request: IncomingMessage): string => {
@@ -336,6 +387,38 @@ const handle = async (
     }
     const spans = logs.insert(spansFromOtlp(body));
     send(response, 200, { ok: true, spans }, 'application/json; charset=utf-8');
+    return;
+  }
+  if (url.pathname === '/logs' && method === 'POST') {
+    if (!logs) {
+      send(response, 404, { error: 'Not found' }, 'application/json; charset=utf-8');
+      return;
+    }
+    if (!authorized(request, [token, logs.webhookToken() ?? ''])) {
+      send(response, 401, { error: 'Unauthorized' }, 'application/json; charset=utf-8');
+      return;
+    }
+    let raw = '';
+    try {
+      raw = await readBody(request);
+    } catch {
+      send(response, 413, { error: 'body is too large' }, 'application/json; charset=utf-8');
+      return;
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(raw) as unknown;
+    } catch {
+      send(response, 400, { error: 'Expected a JSON body' }, 'application/json; charset=utf-8');
+      return;
+    }
+    const spans = spansFromLogs(body);
+    if (spans.length === 0) {
+      send(response, 400, { error: 'Expected a log line' }, 'application/json; charset=utf-8');
+      return;
+    }
+    logs.insert(spans);
+    send(response, 200, { ok: true }, 'application/json; charset=utf-8');
     return;
   }
   if (login) {

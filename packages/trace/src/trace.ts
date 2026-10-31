@@ -1,13 +1,55 @@
+import { postLine } from './http';
+
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const PIPELINE = new RegExp(`^pipeline:(.+)-execution:(${UUID})$`, 'i');
 const AGENT = new RegExp(`^agent:(.+)-execution:(${UUID})$`, 'i');
 const PIPELINED_AGENT = new RegExp(`^(pipeline:(.+)-execution:(${UUID}))_agent:(.+)-execution:(${UUID})$`, 'i');
+
+export const LOG_LEVELS = ['debug', 'info', 'warn', 'error', 'fatal'] as const;
+
+export type LogLevel = (typeof LOG_LEVELS)[number];
+
+export interface LogFields {
+  err?: unknown;
+  [key: string]: unknown;
+}
+
+export interface LogLine {
+  level: LogLevel;
+  message: string;
+  fields: LogFields;
+  sessionId: string | null;
+  traceId: string | null;
+  time: string;
+  event?: 'start' | 'end';
+  success?: boolean;
+  result?: PipelineResult;
+}
+
+export interface LogMethod {
+  (message: string): void;
+  (fields: LogFields, message?: string): void;
+}
+
+export type PipelineResult = string | number | boolean | null | PipelineResult[] | { [key: string]: PipelineResult };
+
+export interface PipelineEnd {
+  success: boolean;
+  result: PipelineResult;
+}
 
 export interface Pipeline {
   id: string;
   name: string;
   sessionId: () => string;
   agent: (name: string) => Agent;
+  start: () => void;
+  end: (outcome: PipelineEnd) => void;
+  debug: LogMethod;
+  info: LogMethod;
+  warn: LogMethod;
+  error: LogMethod;
+  fatal: LogMethod;
 }
 
 export interface Agent {
@@ -17,6 +59,11 @@ export interface Agent {
   traceId: () => string;
   /** The pipeline session when this agent belongs to one. */
   sessionId: () => string | null;
+  debug: LogMethod;
+  info: LogMethod;
+  warn: LogMethod;
+  error: LogMethod;
+  fatal: LogMethod;
 }
 
 export interface ParsedPipeline {
@@ -42,6 +89,28 @@ const nameOf = (name: string, label: string): string => {
   return trimmed;
 };
 
+const emit = (line: LogLine): void => {
+  postLine(line);
+  if (line.level === 'debug') console.debug(line);
+  else if (line.level === 'warn') console.warn(line);
+  else if (line.level === 'error' || line.level === 'fatal') console.error(line);
+  else console.info(line);
+};
+
+const write = (level: LogLevel, sessionId: string | null, traceId: string | null) => (first: string | LogFields, second?: string): void => {
+  const fields: LogFields = typeof first === 'string' ? {} : first;
+  const message = typeof first === 'string' ? first : (second ?? '');
+  emit({ level, message, fields, sessionId, traceId, time: new Date().toISOString() });
+};
+
+const logs = (sessionId: string | null, traceId: string | null) => ({
+  debug: write('debug', sessionId, traceId),
+  info: write('info', sessionId, traceId),
+  warn: write('warn', sessionId, traceId),
+  error: write('error', sessionId, traceId),
+  fatal: write('fatal', sessionId, traceId),
+});
+
 /** A pipeline session id is `pipeline:{name}-execution:{uuid}`. The uuid stays fixed for this object. */
 export const createPipeline = (name: string): Pipeline => {
   const pipelineName = nameOf(name, 'Pipeline');
@@ -52,7 +121,29 @@ export const createPipeline = (name: string): Pipeline => {
     id,
     name: pipelineName,
     sessionId: () => sessionId,
-    agent: (agentName) => createAgent(agentName, pipeline),
+    agent: (agentName: string) => createAgent(agentName, pipeline),
+    start: () => emit({ level: 'info', message: 'start', fields: {}, sessionId, traceId: null, time: new Date().toISOString(), event: 'start' }),
+    end: (outcome) => {
+      let message = '';
+      try {
+        message = typeof outcome.result === 'string' ? outcome.result : JSON.stringify(outcome.result);
+      } catch (error) {
+        console.error('Leo Logs could not send the line', error);
+        return;
+      }
+      emit({
+        level: outcome.success ? 'info' : 'error',
+        message,
+        fields: {},
+        sessionId,
+        traceId: null,
+        time: new Date().toISOString(),
+        event: 'end',
+        success: outcome.success,
+        result: outcome.result,
+      });
+    },
+    ...logs(sessionId, null),
   };
   return pipeline;
 };
@@ -70,6 +161,7 @@ export const createAgent = (name: string, pipeline?: Pipeline): Agent => {
     ...(pipeline ? { pipeline } : {}),
     traceId: () => traceId,
     sessionId: () => pipeline ? pipeline.sessionId() : null,
+    ...logs(pipeline ? pipeline.sessionId() : null, traceId),
   };
 };
 

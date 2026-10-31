@@ -8,7 +8,7 @@ OpenRouter logs for pipelines and agents.
 
 Requires Node `>=24 <25`.
 
-The docs site is VitePress. `npm run docs` serves it, and `npm run docs:build` writes `docs/.vitepress/dist`. The guide is Getting started, Integrate, @leo-logs/trace, Pipelines, Agents, The log page, and Run.
+The docs site is VitePress. `npm run docs` serves it, and `npm run docs:build` writes `docs/.vitepress/dist`. The guide is Overview, then Quick Start: Deploy the Leo Logs website, Connect to OpenRouter, and Code Integration.
 
 ```bash
 npm install

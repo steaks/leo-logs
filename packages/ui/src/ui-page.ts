@@ -221,6 +221,7 @@ export const logPage = (): string => `<!DOCTYPE html>
     .table-wrap:not(:has(table:not([hidden]))) { display: none; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    td.message { max-width: 520px; white-space: pre-wrap; overflow-wrap: anywhere; }
     th { color: var(--muted); font-size: 12px; font-weight: 550; background: transparent; }
     th button {
       display: inline-flex;
@@ -784,6 +785,7 @@ export const logPage = (): string => `<!DOCTYPE html>
       if (value && typeof value === 'object' && Array.isArray(value.links)) return value.links.map((link) => link.text).join(', ');
       if (value && typeof value === 'object' && Array.isArray(value.buttons)) return value.buttons.map((button) => button.text).join(', ');
       if (value && typeof value === 'object' && value.text != null) return String(value.text);
+      if (value && typeof value === 'object' && typeof value.message === 'string') return value.message;
       return String(value ?? '');
     };
     const linkCell = (td, value) => {
@@ -824,6 +826,10 @@ export const logPage = (): string => `<!DOCTYPE html>
           if (value && typeof value === 'object' && Array.isArray(value.links)) linkCell(td, value);
           else if (value && typeof value === 'object' && Array.isArray(value.buttons)) buttonCell(td, value);
           else if (value && typeof value === 'object' && value.text != null) td.append(actionButton(value));
+          else if (value && typeof value === 'object' && typeof value.message === 'string') {
+            td.className = 'message';
+            td.textContent = value.message;
+          }
           else td.textContent = value;
           tr.append(td);
         }
@@ -1172,10 +1178,12 @@ export const logPage = (): string => `<!DOCTYPE html>
       const agentCalls = (payload.rows || []).filter((row) => (row.agentName || row.sessionId === execution.traceId) && matchesName(row.agentName) && matchesFailures(row.status === 'error' ? 1 : 0));
       const callsOf = listedCalls(payload.rows || []);
       sessionStats(tokenSums(payload.rows));
-      showTable(callsHead, callsBody, ['Time', 'Agent', 'Key', 'Status', 'Turn', 'Latency', 'Input', 'Output', 'Messages', 'Cost', 'Model', 'Provider', 'Functions', 'Server'], agentCalls, (row) => {
+      showTable(callsHead, callsBody, ['Time', 'Kind', 'Message', 'Agent', 'Key', 'Status', 'Turn', 'Latency', 'Input', 'Output', 'Messages', 'Cost', 'Model', 'Provider', 'Functions', 'Server'], agentCalls, (row) => {
         const calls = callsOf.get(row) || callLists(row);
         return [
           when(row.timestamp),
+          logKind(row),
+          { message: logMessage(row) },
           row.agentName || '',
           row.apiKeyName || '',
           row.status || '',
@@ -1304,10 +1312,12 @@ export const logPage = (): string => `<!DOCTYPE html>
         { label: 'Output tokens', value: tokenCount(tokens.output) },
         { label: 'Total cost', value: money(cost) },
       ]);
-      showTable(callsHead, callsBody, ['Time', 'Key', 'Status', 'Turn', 'Latency', 'Input', 'Output', 'Messages', 'Cost', 'Model', 'Functions', 'Server'], agentCalls, (row) => {
+      showTable(callsHead, callsBody, ['Time', 'Kind', 'Message', 'Key', 'Status', 'Turn', 'Latency', 'Input', 'Output', 'Messages', 'Cost', 'Model', 'Functions', 'Server'], agentCalls, (row) => {
         const calls = callsOf.get(row) || callLists(row);
         return [
           when(row.timestamp),
+          logKind(row),
+          { message: logMessage(row) },
           row.apiKeyName || '',
           row.status || '',
           turnLabel(row),
@@ -1714,10 +1724,41 @@ export const logPage = (): string => `<!DOCTYPE html>
       }
       return next;
     };
+    const logLevels = ['debug', 'info', 'warn', 'error', 'fatal'];
+    const logKind = (row) => {
+      const event = row.metadata && row.metadata.event;
+      if (event === 'start' || event === 'end') return event;
+      if (!row.model && logLevels.includes(row.level)) return row.level;
+      return '';
+    };
+    const logText = (value) => {
+      if (value == null) return '';
+      if (typeof value === 'string') return value;
+      try { return JSON.stringify(value); } catch { return ''; }
+    };
+    const logMessage = (row) => {
+      const kind = logKind(row);
+      if (!kind || kind === 'start') return '';
+      if (kind === 'end') return logText(row.metadata && row.metadata.result !== undefined ? row.metadata.result : row.output);
+      return logText(row.output);
+    };
     const showDetail = (row) => {
       detail.replaceChildren();
       const pre = document.createElement('pre');
-      pre.textContent = JSON.stringify(pretty({ input: row.input, output: row.output, metadata: row.metadata }), null, 2);
+      const kind = logKind(row);
+      let body;
+      if (kind) {
+        const fields = { ...(row.metadata && typeof row.metadata === 'object' ? row.metadata : {}) };
+        delete fields.event;
+        delete fields.success;
+        delete fields.result;
+        body = { kind, message: kind === 'end' ? (row.metadata && row.metadata.result !== undefined ? row.metadata.result : row.output) : row.output };
+        if (kind === 'end') body.success = !!(row.metadata && row.metadata.success);
+        if (Object.keys(fields).length) body.fields = fields;
+      } else {
+        body = { input: row.input, output: row.output, metadata: row.metadata };
+      }
+      pre.textContent = JSON.stringify(pretty(body), null, 2);
       detail.append(pre);
     };
 

@@ -150,39 +150,124 @@ const runChat = async (apiKey: string, agent: Agent, model: string, task: string
   throw new Error(`${agent.name} did not write the email`);
 };
 
+/** One model call for an agent. The pipeline session and this agent's trace id go on the request. */
+const runTurn = async (apiKey: string, agent: Agent, task: string): Promise<string> => {
+  const sessionId = agent.sessionId();
+  if (!sessionId) throw new Error(`${agent.name} has no pipeline`);
+  const client = new OpenRouter({ apiKey });
+  const response = await client.chat.send({
+    chatRequest: {
+      model: writer,
+      messages: [{ role: 'user', content: task }],
+      sessionId,
+      trace: { traceId: agent.traceId() },
+      stream: false,
+    },
+  });
+  if (!('choices' in response)) throw new Error(`${agent.name} did not return a chat completion`);
+  const content = response.choices[0]?.message?.content;
+  return typeof content === 'string' ? content : JSON.stringify(content ?? '');
+};
+
+type Step = {
+  agent: string;
+  note: string;
+  fields?: { [key: string]: string | number };
+  level?: 'debug' | 'info' | 'warn';
+  task: (prior: string) => string;
+};
+
+const runSteps = async (apiKey: string, name: string, steps: Step[], intro?: { message: string; level?: 'info' | 'warn' }) => {
+  const pipeline = createPipeline(name);
+  pipeline.start();
+  if (intro?.level === 'warn') pipeline.warn(intro.message);
+  else if (intro) pipeline.info(intro.message);
+  let prior = '';
+  try {
+    for (const step of steps) {
+      const agent = pipeline.agent(step.agent);
+      const log = step.level === 'warn' ? agent.warn : step.level === 'debug' ? agent.debug : agent.info;
+      if (step.fields) log(step.fields, step.note);
+      else log(step.note);
+      prior = await runTurn(apiKey, agent, step.task(prior));
+      process.stdout.write(`\n[${name} / ${step.agent}]\n${prior}\n`);
+    }
+    pipeline.end({ success: true, result: prior });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    pipeline.error({ err: error }, message);
+    pipeline.end({ success: false, result: message });
+    throw error;
+  }
+};
+
 const run = async () => {
-  const pipeline = createPipeline('order-desk');
-  const lookup = pipeline.agent('lookup');
-  const policy = pipeline.agent('policy');
-  const reply = pipeline.agent('reply');
   const apiKey = process.env.OPENROUTER_API_KEY ?? '';
-  const order = await runAgent(
-    apiKey,
-    lookup,
-    flash,
-    'Look up order 1042. Report the customer, item, carrier, promised ship date, and status.',
-    'Check today\'s date in America/Denver and say how many days late that shipment is.',
-    'order_record',
-    orderRecord,
-    clock,
-  );
-  const decision = await runAgent(
-    apiKey,
-    policy,
-    flash,
-    `${order}\n\nUse the refund rule with the days late from that report. Say whether shipping should be refunded and the credit in cents.`,
-    'Search the web for how that carrier treats a package still in transit that many days past the ship date. Add what you find to the refund decision.',
-    'shipping_refund_rule',
-    shippingRefundRule,
-    carrierSearch,
-  );
-  const email = await runChat(
-    apiKey,
-    reply,
-    writer,
-    `${order}\n\n${decision}\n\nWrite the customer email. Call reply_tone with the customer's full name first. Greet them the way that tool says, stay within its sentence limit, and use its signoff. Include the order, the delay, and the refund.`,
-  );
-  process.stdout.write(`${email}\n`);
+  await runSteps(apiKey, 'support-reply', [
+    {
+      agent: 'track',
+      level: 'debug',
+      fields: { orderId: '1042' },
+      note: 'Looking up the order',
+      task: () => 'Order 1042 is a wool coat. Promised ship date 2026-10-20. Carrier USPS. Status in transit. Say where the shipment is and how late it is.',
+    },
+    {
+      agent: 'answer',
+      note: 'Writing the customer reply',
+      task: (prior) => `${prior}\n\nWrite the customer reply. The customer said their package never arrived.`,
+    },
+  ], { message: 'Customer asked where the package is' });
+  await runSteps(apiKey, 'claim-review', [
+    {
+      agent: 'facts',
+      note: 'Reading what happened',
+      task: () => 'The kitchen pipe burst and flooded the room. The homeowner wants the repair covered. State the facts of the claim.',
+    },
+    {
+      agent: 'policy',
+      note: 'Checking what the policy covers',
+      task: (prior) => `${prior}\n\nThe policy covers sudden water damage and excludes gradual leaks. Say whether this claim is covered.`,
+    },
+    {
+      agent: 'decision',
+      note: 'Writing approve or deny',
+      task: (prior) => `${prior}\n\nWrite approve or deny, and the reason in one sentence.`,
+    },
+  ], { message: 'A water damage claim was filed' });
+  await runSteps(apiKey, 'outage-update', [
+    {
+      agent: 'status',
+      note: 'Finding what is broken',
+      task: () => 'Checkout has failed for 20 minutes. Card payments return an error. Say what is broken.',
+    },
+    {
+      agent: 'impact',
+      note: 'Naming who is affected',
+      task: (prior) => `${prior}\n\nCustomers who still have items in the cart cannot pay. Say who is affected.`,
+    },
+    {
+      agent: 'notice',
+      note: 'Writing the status page update',
+      task: (prior) => `${prior}\n\nWrite the status page update.`,
+    },
+  ], { level: 'warn', message: 'Checkout has been failing for 20 minutes' });
+  await runSteps(apiKey, 'resume-screen', [
+    {
+      agent: 'read',
+      note: 'Reading the resume',
+      task: () => 'The applicant did support for two years and used a help desk. The role is support. List the relevant experience.',
+    },
+    {
+      agent: 'score',
+      note: 'Scoring the applicant',
+      task: (prior) => `${prior}\n\nScore the applicant against the support role from 1 to 5.`,
+    },
+    {
+      agent: 'decision',
+      note: 'Writing advance or decline',
+      task: (prior) => `${prior}\n\nWrite advance or decline.`,
+    },
+  ], { message: 'A resume arrived for the support role' });
 };
 
 if (process.argv[1] && process.argv[1].endsWith('calls.ts')) {

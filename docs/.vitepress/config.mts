@@ -5,31 +5,24 @@ export default defineConfig({
   description: 'OpenRouter logs for pipelines and agents.',
   themeConfig: {
     nav: [
-      { text: 'Getting started', link: '/getting-started' },
-      { text: 'Pipelines', link: '/pipelines' },
-      { text: 'Agents', link: '/agents' },
+      { text: 'Overview', link: '/' },
+      { text: 'Quick Start', link: '/quick-start/web-app/deploy' },
     ],
     sidebar: [
+      { text: 'Overview', link: '/' },
       {
-        text: 'Start',
+        text: 'Quick Start',
+        collapsed: false,
         items: [
-          { text: 'Getting started', link: '/getting-started' },
-          { text: 'Integrate', link: '/integrate' },
-          { text: '@leo-logs/trace', link: '/trace' },
-        ],
-      },
-      {
-        text: 'Logs',
-        items: [
-          { text: 'Pipelines', link: '/pipelines' },
-          { text: 'Agents', link: '/agents' },
-          { text: 'The log page', link: '/log-page' },
-        ],
-      },
-      {
-        text: 'Run',
-        items: [
-          { text: 'Run', link: '/run' },
+          {
+            text: 'Web App',
+            collapsed: false,
+            items: [
+              { text: 'Deploy the Leo Logs website', link: '/quick-start/web-app/deploy' },
+              { text: 'Connect to OpenRouter', link: '/quick-start/web-app/connect' },
+            ],
+          },
+          { text: 'Code Integration', link: '/quick-start/code' },
         ],
       },
     ],

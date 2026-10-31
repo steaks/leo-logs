@@ -1,10 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.parseTraceId = exports.createAgent = exports.createPipeline = void 0;
+exports.parseTraceId = exports.createAgent = exports.createPipeline = exports.LOG_LEVELS = void 0;
+const http_1 = require("./http");
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const PIPELINE = new RegExp(`^pipeline:(.+)-execution:(${UUID})$`, 'i');
 const AGENT = new RegExp(`^agent:(.+)-execution:(${UUID})$`, 'i');
 const PIPELINED_AGENT = new RegExp(`^(pipeline:(.+)-execution:(${UUID}))_agent:(.+)-execution:(${UUID})$`, 'i');
+exports.LOG_LEVELS = ['debug', 'info', 'warn', 'error', 'fatal'];
 const nameOf = (name, label) => {
     const trimmed = name.trim();
     if (!trimmed)
@@ -13,6 +15,29 @@ const nameOf = (name, label) => {
         throw new Error(`${label} name cannot contain _agent:`);
     return trimmed;
 };
+const emit = (line) => {
+    (0, http_1.postLine)(line);
+    if (line.level === 'debug')
+        console.debug(line);
+    else if (line.level === 'warn')
+        console.warn(line);
+    else if (line.level === 'error' || line.level === 'fatal')
+        console.error(line);
+    else
+        console.info(line);
+};
+const write = (level, sessionId, traceId) => (first, second) => {
+    const fields = typeof first === 'string' ? {} : first;
+    const message = typeof first === 'string' ? first : (second ?? '');
+    emit({ level, message, fields, sessionId, traceId, time: new Date().toISOString() });
+};
+const logs = (sessionId, traceId) => ({
+    debug: write('debug', sessionId, traceId),
+    info: write('info', sessionId, traceId),
+    warn: write('warn', sessionId, traceId),
+    error: write('error', sessionId, traceId),
+    fatal: write('fatal', sessionId, traceId),
+});
 /** A pipeline session id is `pipeline:{name}-execution:{uuid}`. The uuid stays fixed for this object. */
 const createPipeline = (name) => {
     const pipelineName = nameOf(name, 'Pipeline');
@@ -25,6 +50,29 @@ const createPipeline = (name) => {
         name: pipelineName,
         sessionId: () => sessionId,
         agent: (agentName) => (0, exports.createAgent)(agentName, pipeline),
+        start: () => emit({ level: 'info', message: 'start', fields: {}, sessionId, traceId: null, time: new Date().toISOString(), event: 'start' }),
+        end: (outcome) => {
+            let message = '';
+            try {
+                message = typeof outcome.result === 'string' ? outcome.result : JSON.stringify(outcome.result);
+            }
+            catch (error) {
+                console.error('Leo Logs could not send the line', error);
+                return;
+            }
+            emit({
+                level: outcome.success ? 'info' : 'error',
+                message,
+                fields: {},
+                sessionId,
+                traceId: null,
+                time: new Date().toISOString(),
+                event: 'end',
+                success: outcome.success,
+                result: outcome.result,
+            });
+        },
+        ...logs(sessionId, null),
     };
     return pipeline;
 };
@@ -43,6 +91,7 @@ const createAgent = (name, pipeline) => {
         ...(pipeline ? { pipeline } : {}),
         traceId: () => traceId,
         sessionId: () => pipeline ? pipeline.sessionId() : null,
+        ...logs(pipeline ? pipeline.sessionId() : null, traceId),
     };
 };
 exports.createAgent = createAgent;

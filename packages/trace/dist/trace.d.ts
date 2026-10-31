@@ -1,8 +1,43 @@
+export declare const LOG_LEVELS: readonly ["debug", "info", "warn", "error", "fatal"];
+export type LogLevel = (typeof LOG_LEVELS)[number];
+export interface LogFields {
+    err?: unknown;
+    [key: string]: unknown;
+}
+export interface LogLine {
+    level: LogLevel;
+    message: string;
+    fields: LogFields;
+    sessionId: string | null;
+    traceId: string | null;
+    time: string;
+    event?: 'start' | 'end';
+    success?: boolean;
+    result?: PipelineResult;
+}
+export interface LogMethod {
+    (message: string): void;
+    (fields: LogFields, message?: string): void;
+}
+export type PipelineResult = string | number | boolean | null | PipelineResult[] | {
+    [key: string]: PipelineResult;
+};
+export interface PipelineEnd {
+    success: boolean;
+    result: PipelineResult;
+}
 export interface Pipeline {
     id: string;
     name: string;
     sessionId: () => string;
     agent: (name: string) => Agent;
+    start: () => void;
+    end: (outcome: PipelineEnd) => void;
+    debug: LogMethod;
+    info: LogMethod;
+    warn: LogMethod;
+    error: LogMethod;
+    fatal: LogMethod;
 }
 export interface Agent {
     id: string;
@@ -11,6 +46,11 @@ export interface Agent {
     traceId: () => string;
     /** The pipeline session when this agent belongs to one. */
     sessionId: () => string | null;
+    debug: LogMethod;
+    info: LogMethod;
+    warn: LogMethod;
+    error: LogMethod;
+    fatal: LogMethod;
 }
 export interface ParsedPipeline {
     name: string;
